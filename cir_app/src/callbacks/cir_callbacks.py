@@ -1,0 +1,131 @@
+import base64
+import threading
+import tempfile
+from io import BytesIO
+from dash import callback, Input, Output, State, html
+import dash_bootstrap_components as dbc
+from PIL import Image
+from src import config
+import os
+import sys
+# Ensure the SEARLE demo directory is on the path for local imports
+sys.path.append(os.path.join(os.path.dirname(__file__), 'SEARLE'))
+from compose_image_retrieval_demo import ComposedImageRetrievalSystem
+
+# Thread lock and CIR system instance
+lock = threading.Lock()
+cir_system = None
+
+@callback(
+    [Output('cir-upload-status', 'children'),
+     Output('cir-query-preview', 'children'),
+     Output('cir-search-button', 'disabled')],
+    [Input('cir-upload-image', 'contents'),
+     Input('cir-text-prompt', 'value')],
+    [State('cir-upload-image', 'filename')]
+)
+def update_upload_status(upload_contents, text_prompt, filename):
+    """Handle image upload and update UI components"""
+    if upload_contents is None:
+        return (html.Div("No image uploaded", className="text-muted small"), html.Div(), True)
+    try:
+        _, content_string = upload_contents.split(',')
+        decoded = base64.b64decode(content_string)
+        img = Image.open(BytesIO(decoded))
+        preview = html.Div([
+            html.H6("Query Image Preview:", className="mb-2"),
+            dbc.Card(dbc.CardBody([
+                html.Img(src=upload_contents, className="img-fluid", style={'max-width':'200px','max-height':'200px'}),
+                html.P(f"Filename: {filename}", className="small text-muted mt-2 mb-0"),
+                html.P(f"Size: {img.size[0]} x {img.size[1]}", className="small text-muted mb-0")
+            ]), style={'width': 'fit-content'})
+        ])
+        uploaded = html.Div([html.I(className="fas fa-check-circle text-success me-2"), "Image uploaded successfully"], className="text-success small")
+        disabled = not (upload_contents and text_prompt and text_prompt.strip())
+        return uploaded, preview, disabled
+    except Exception as e:
+        error = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Error processing image: {e}"], className="text-danger small")
+        return error, html.Div(), True
+
+@callback(
+    Output('cir-search-button', 'disabled', allow_duplicate=True),
+    [Input('cir-text-prompt', 'value')],
+    [State('cir-upload-image', 'contents')],
+    prevent_initial_call=True
+)
+def update_search_button_state(text_prompt, upload_contents):
+    """Enable/disable search button based on input validation"""
+    if upload_contents and text_prompt and text_prompt.strip():
+        return False
+    return True
+
+@callback(
+    [Output('cir-results', 'children'), Output('cir-search-status', 'children')],
+    [Input('cir-search-button', 'n_clicks')],
+    [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
+    prevent_initial_call=True
+)
+def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
+    """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
+    if not upload_contents or not text_prompt:
+        empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
+        return empty, html.Div()
+    try:
+        # Decode and save query image
+        _, content_string = upload_contents.split(',')
+        decoded = base64.b64decode(content_string)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        tmp.write(decoded)
+        tmp.close()
+
+        global cir_system
+        if cir_system is None:
+            with lock:
+                if cir_system is None:
+                    cir_system = ComposedImageRetrievalSystem(
+                        dataset_path=config.CIR_DATASET_PATH,
+                        dataset_type=config.CIR_DATASET_TYPE,
+                        clip_model_name=config.CIR_CLIP_MODEL_NAME,
+                        eval_type=config.CIR_EVAL_TYPE,
+                        preprocess_type=config.CIR_PREPROCESS_TYPE,
+                        exp_name=config.CIR_EXP_NAME,
+                        phi_checkpoint_name=config.CIR_PHI_CHECKPOINT_NAME
+                    )
+                    cir_system.create_database(split=config.CIR_SPLIT)
+
+        with lock:
+            results = cir_system.query(tmp.name, text_prompt, top_n)
+        os.unlink(tmp.name)
+
+        # Build result cards
+        cards = []
+        for img_name, score in results:
+            # Find image file
+            img_path = None
+            for ext in ['.jpg', '.png']:
+                p = os.path.join(config.CIR_DATASET_PATH, img_name + ext)
+                if os.path.exists(p):
+                    img_path = p
+                    break
+            if not img_path:
+                continue
+            data = open(img_path, 'rb').read()
+            src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
+            card = dbc.Card(dbc.CardBody([
+                html.Img(src=src, className='img-fluid', style={'maxHeight':'150px','width':'auto'}),
+                html.P(f"Score: {score:.4f}", className='small text-center mt-1')
+            ]), className='result-card')
+            cards.append(card)
+
+        rows = []
+        for i in range(0, len(cards), 5):
+            chunk = cards[i:i+5]
+            cols = [dbc.Col(c, width=12//len(chunk)) for c in chunk]
+            rows.append(dbc.Row(cols, className='mb-3'))
+
+        results_div = html.Div([html.H5("Retrieved Images", className="mb-3")] + rows)
+        status = html.Div([html.I(className="fas fa-check-circle text-success me-2"), f"Retrieved {len(cards)} images"], className="text-success small")
+        return results_div, status
+    except Exception as e:
+        err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err

@@ -10,10 +10,13 @@ from sklearn.manifold import TSNE
 
 from src import config
 
-def calculate_clip_embeddings(dataset, clip_model_name='ViT-B/32'):
+def calculate_clip_embeddings(dataset, clip_model_name=None):
     """
     Calculate CLIP embeddings for images using the same approach as compose_image_retrieval_demo.py
     """
+    # Use the configured CLIP model if none provided
+    if clip_model_name is None:
+        clip_model_name = config.CLIP_MODEL_NAME
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
@@ -69,7 +72,7 @@ def calculate_tsne(clip_embeddings, n_components=2, metric='cosine'):
     tsne_embeddings = tsne_reducer.fit_transform(clip_embeddings)
     return tsne_embeddings[:, 0], tsne_embeddings[:, 1]
 
-def generate_projection_data(clip_model_name='ViT-B/32'):
+def generate_projection_data():
     """
     Generate CLIP embeddings and projections for the dataset
     """
@@ -85,8 +88,8 @@ def generate_projection_data(clip_model_name='ViT-B/32'):
     
     print(f"Processing {len(dataset_sample)} images")
     
-    # Calculate CLIP embeddings
-    clip_embeddings = calculate_clip_embeddings(dataset_sample, clip_model_name)
+    # Calculate CLIP embeddings using configured model
+    clip_embeddings = calculate_clip_embeddings(dataset_sample)
     
     # Calculate projections
     umap_x, umap_y = calculate_umap(clip_embeddings)

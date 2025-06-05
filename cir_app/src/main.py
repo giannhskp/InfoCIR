@@ -19,6 +19,7 @@ import src.callbacks.histogram
 import src.callbacks.gallery
 import src.callbacks.deselect_button
 import src.callbacks.help_button
+import src.callbacks.cir_callbacks
 
 def run_ui():
     """Run the Dash UI application"""
@@ -40,23 +41,108 @@ def run_ui():
         dcc.Tab(label='histogram', children=histogram_widget),
     ])
 
+    # Create CIR interface
+    cir_interface = dbc.Card([
+        dbc.CardHeader(html.H4("Composed Image Retrieval", className="mb-0")),
+        dbc.CardBody([
+            dbc.Row([
+                dbc.Col([
+                    html.Label("Upload Query Image:", className="form-label fw-bold"),
+                    dcc.Upload(
+                        id='cir-upload-image',
+                        children=html.Div([
+                            html.I(className="fas fa-cloud-upload-alt me-2"),
+                            'Drag and Drop or Click to Select Image'
+                        ]),
+                        style={
+                            'width': '100%',
+                            'height': '80px',
+                            'lineHeight': '80px',
+                            'borderWidth': '2px',
+                            'borderStyle': 'dashed',
+                            'borderRadius': '10px',
+                            'textAlign': 'center',
+                            'background': '#fafafa',
+                            'cursor': 'pointer',
+                            'color': '#666'
+                        },
+                        className='cir-upload-area',
+                        multiple=False,
+                        accept='image/*'
+                    ),
+                    html.Div(id='cir-upload-status', className="mt-2 status-indicator")
+                ], width=4),
+                dbc.Col([
+                    html.Label("Text Prompt:", className="form-label fw-bold"),
+                    dbc.Input(
+                        id='cir-text-prompt',
+                        placeholder="e.g., 'is wearing a red shirt', 'without the person'",
+                        type="text",
+                        className="mb-3"
+                    ),
+                    html.Label("Top N Results:", className="form-label fw-bold"),
+                    dbc.Select(
+                        id='cir-top-n',
+                        options=[
+                            {"label": "5 images", "value": 5},
+                            {"label": "10 images", "value": 10},
+                            {"label": "20 images", "value": 20}
+                        ],
+                        value=10,
+                        className="mb-3"
+                    )
+                ], width=4),
+                dbc.Col([
+                    html.Label("Action:", className="form-label fw-bold"),
+                    html.Br(),
+                    dbc.Button(
+                        [html.I(className="fas fa-search me-2"), "Start Retrieval"],
+                        id='cir-search-button',
+                        color="primary",
+                        size="lg",
+                        className="w-100",
+                        disabled=True
+                    ),
+                    html.Div(id='cir-search-status', className="mt-2 status-indicator")
+                ], width=4)
+            ], className="mb-4 cir-interface"),
+            # Query image preview
+            html.Div(id='cir-query-preview', className="mb-3 query-preview"),
+            # Results section
+            html.Hr(),
+            html.Div(id='cir-results', children=[
+                html.H5("Retrieved Images", className="mb-3"),
+                html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", 
+                        className="text-muted text-center p-4")
+            ])
+        ])
+    ], className="mt-4")
+
     # Create app layout
-    app.layout = dbc.Container([
-        help_popup_widget,
-        dbc.Stack([
-            projection_radio_buttons_widget,
-            dbc.Button('Deselect everything', 
-                      id='deselect-button', 
-                      class_name="btn btn-outline-primary ms-auto header-button"),
-            dbc.Button('Help', 
-                      id='help-button', 
-                      class_name="btn btn-outline-primary header-button")
-        ], id='header', direction="horizontal"),
-        dbc.Row([
-            dbc.Col(scatterplot_widget, width=6, className='main-col'),
-            dbc.Col(right_tab, width=6, className='main-col')
-        ], className='h-100', justify='between')
-    ], fluid=True, id='container')
+    app.layout = html.Div(
+        dbc.Container([
+            help_popup_widget,
+            dbc.Stack([
+                projection_radio_buttons_widget,
+                dbc.Button('Deselect everything', 
+                          id='deselect-button', 
+                          class_name="btn btn-outline-primary ms-auto header-button"),
+                dbc.Button('Help', 
+                          id='help-button', 
+                          class_name="btn btn-outline-primary header-button")
+            ], id='header', direction="horizontal"),
+            dbc.Row([
+                dbc.Col(scatterplot_widget, width=6, className='main-col'),
+                dbc.Col(right_tab, width=6, className='main-col')
+            ], className='h-100', justify='between'),
+            # ], className='mt-4', justify='between'),
+            # CIR Interface
+            dbc.Row([
+                dbc.Col(cir_interface, width=12)
+            ], className='mt-4')
+        ], fluid=True, id='container'),
+        style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
+    )
 
     app.run(debug=True, use_reloader=False, port=config.PORT)
 
