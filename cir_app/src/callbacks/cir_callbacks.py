@@ -11,6 +11,7 @@ import sys
 # Ensure the SEARLE demo directory is on the path for local imports
 sys.path.append(os.path.join(os.path.dirname(__file__), 'SEARLE'))
 from compose_image_retrieval_demo import ComposedImageRetrievalSystem
+from src.Dataset import Dataset
 
 # Thread lock and CIR system instance
 lock = threading.Lock()
@@ -97,17 +98,22 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             results = cir_system.query(tmp.name, text_prompt, top_n)
         os.unlink(tmp.name)
 
-        # Build result cards
+        # Build result cards using paths from the loaded dataset
         cards = []
+        df = Dataset.get()
         for img_name, score in results:
-            # Find image file
             img_path = None
-            for ext in ['.jpg', '.png']:
-                p = os.path.join(config.CIR_DATASET_PATH, img_name + ext)
-                if os.path.exists(p):
-                    img_path = p
-                    break
-            if not img_path:
+            try:
+                # Try numeric index lookup
+                idx = int(img_name)
+                if idx in df.index:
+                    img_path = df.loc[idx]['image_path']
+            except Exception:
+                # Try string index lookup
+                if img_name in df.index:
+                    img_path = df.loc[img_name]['image_path']
+            # Skip if path not found or doesn't exist
+            if not img_path or not os.path.exists(img_path):
                 continue
             data = open(img_path, 'rb').read()
             src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
