@@ -1,0 +1,13 @@
+dash>=2.14.0
+dash-bootstrap-components>=1.5.0
+plotly>=5.15.0
+pandas>=2.0.0
+numpy>=1.24.0
+Pillow>=10.0.0
+torch>=2.0.0
+torchvision>=0.15.0
+clip-by-openai>=1.0
+umap-learn>=0.5.3
+scikit-learn>=1.3.0
+tqdm>=4.65.0
+dash-holoniq-wordcloud>=0.1.0 
