@@ -12,6 +12,9 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'SEARLE'))
 from compose_image_retrieval_demo import ComposedImageRetrievalSystem
 from src.Dataset import Dataset
+import torch
+import torch.nn.functional as F
+import pickle
 
 # Thread lock and CIR system instance
 lock = threading.Lock()
@@ -61,7 +64,9 @@ def update_search_button_state(text_prompt, upload_contents):
     return True
 
 @callback(
-    [Output('cir-results', 'children'), Output('cir-search-status', 'children')],
+    [Output('cir-results', 'children'),
+     Output('cir-search-status', 'children'),
+     Output('cir-search-results', 'data')],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
     prevent_initial_call=True
@@ -70,7 +75,8 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
-        return empty, html.Div()
+        # Clear any previous CIR visualization
+        return empty, html.Div(), None
     try:
         # Decode and save query image
         _, content_string = upload_contents.split(',')
@@ -96,7 +102,6 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
 
         with lock:
             results = cir_system.query(tmp.name, text_prompt, top_n)
-        os.unlink(tmp.name)
 
         # Build result cards using paths from the loaded dataset
         cards = []
@@ -131,7 +136,54 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
 
         results_div = html.Div([html.H5("Retrieved Images", className="mb-3")] + rows)
         status = html.Div([html.I(className="fas fa-check-circle text-success me-2"), f"Retrieved {len(cards)} images"], className="text-success small")
-        return results_div, status
+        # Prepare store data for visualization
+        # Map retrieved image names to DataFrame indices
+        topk_ids = []
+        for img_name, _ in results:
+            try:
+                idx = int(img_name)
+                if idx in df.index:
+                    topk_ids.append(idx)
+            except:
+                if img_name in df.index:
+                    topk_ids.append(img_name)
+        top1_id = topk_ids[0] if topk_ids else None
+        # Compute query embedding and normalize
+        device_model = next(cir_system.clip_model.parameters()).device
+        query_img = Image.open(tmp.name).convert('RGB')
+        query_input = cir_system.preprocess(query_img).unsqueeze(0).to(device_model)
+        with torch.no_grad():
+            feat = cir_system.clip_model.encode_image(query_input)
+            feat = F.normalize(feat.float(), dim=-1)
+        feat_np = feat.cpu().numpy()
+        # UMAP transform
+        umap_path = config.WORK_DIR / 'umap_reducer.pkl'
+        umap_reducer = pickle.load(open(str(umap_path), 'rb'))
+        umap_xy = umap_reducer.transform(feat_np)
+        umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
+        # TSNE approximate by nearest neighbor
+        db_feats = cir_system.database_features.cpu()
+        with torch.no_grad():
+            sims = (feat.cpu() @ db_feats.T).squeeze(0)
+        idx_nn = int(torch.argmax(sims).item())
+        nn_name = cir_system.database_names[idx_nn]
+        try:
+            nn_id = int(nn_name)
+        except:
+            nn_id = nn_name
+        tsne_x_query = float(df.loc[nn_id]['tsne_x'])
+        tsne_y_query = float(df.loc[nn_id]['tsne_y'])
+        # Delete temporary query image file
+        os.unlink(tmp.name)
+        store_data = {
+            'topk_ids': topk_ids,
+            'top1_id': top1_id,
+            'umap_x_query': umap_x_query,
+            'umap_y_query': umap_y_query,
+            'tsne_x_query': tsne_x_query,
+            'tsne_y_query': tsne_y_query
+        }
+        return results_div, status, store_data
     except Exception as e:
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None

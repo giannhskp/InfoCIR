@@ -48,4 +48,9 @@ CIR_EVAL_TYPE = 'searle'             # Evaluation type: 'searle', 'searle-xl', '
 CIR_PREPROCESS_TYPE = 'targetpad'     # Preprocessing type: 'targetpad' or 'clip'
 CIR_EXP_NAME = None                  # Experiment name for phi/oti if needed
 CIR_PHI_CHECKPOINT_NAME = None       # Phi checkpoint name if using phi evaluation
-CIR_SPLIT = 'val'                    # Dataset split for building the database 
+CIR_SPLIT = 'val'                    # Dataset split for building the database
+
+# CIR search visualization colors
+QUERY_COLOR = 'magenta'
+TOP_K_COLOR = 'orange'
+TOP_1_COLOR = 'red' 

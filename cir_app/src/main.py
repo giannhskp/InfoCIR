@@ -139,7 +139,9 @@ def run_ui():
             # CIR Interface
             dbc.Row([
                 dbc.Col(cir_interface, width=12)
-            ], className='mt-4')
+            ], className='mt-4'),
+            # Store for CIR search visualization data
+            dcc.Store(id='cir-search-results', data=None)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )
