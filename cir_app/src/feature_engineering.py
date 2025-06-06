@@ -7,10 +7,29 @@ import pandas as pd
 import numpy as np
 from umap import UMAP
 from sklearn.manifold import TSNE
+from torch.utils.data import DataLoader, Dataset
 
 from src import config
 
-def calculate_clip_embeddings(dataset, clip_model_name=None):
+class ImagePathDataset(Dataset):
+    def __init__(self, image_paths, preprocess):
+        self.image_paths = image_paths
+        self.preprocess = preprocess
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        image_path = self.image_paths[idx]
+        try:
+            image = PIL.Image.open(image_path).convert('RGB')
+            image = self.preprocess(image)
+            return image
+        except Exception as e:
+            print(f"Error processing {image_path}: {e}")
+            return torch.zeros(3, 224, 224)  # fallback zero image if corrupted
+
+def calculate_clip_embeddings(dataset, clip_model_name=None, batch_size=32):
     """
     Calculate CLIP embeddings for images using the same approach as compose_image_retrieval_demo.py
     """
@@ -23,26 +42,23 @@ def calculate_clip_embeddings(dataset, clip_model_name=None):
     # Load CLIP model
     model, preprocess = clip.load(clip_model_name, device=device, jit=False)
     model = model.float().eval().requires_grad_(False)
+
+    # Prepare dataset and loader
+    image_paths = dataset['image_path'].values
+    img_dataset = ImagePathDataset(image_paths, preprocess)
+    data_loader = DataLoader(img_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+
+    all_embeddings = []
+
+    print("Calculating CLIP embeddings in batches...")
+    with torch.no_grad():
+        for batch in tqdm(data_loader):
+            batch = batch.to(device)
+            features = model.encode_image(batch)
+            features = F.normalize(features.float(), dim=-1)
+            all_embeddings.append(features.cpu().numpy())
     
-    clip_embeddings = []
-    
-    print("Calculating CLIP embeddings...")
-    for image_path in tqdm(dataset['image_path']):
-        try:
-            image = PIL.Image.open(image_path).convert('RGB')
-            image_input = preprocess(image).unsqueeze(0).to(device)
-            
-            with torch.no_grad():
-                image_features = model.encode_image(image_input)
-                # Normalize features as done in compose_image_retrieval_demo.py
-                image_features = F.normalize(image_features.float())
-                clip_embeddings.append(image_features.cpu().numpy())
-        except Exception as e:
-            print(f"Error processing {image_path}: {e}")
-            # Add zero embedding for failed images
-            clip_embeddings.append(np.zeros((1, 512)))  # ViT-B/32 has 512 dim
-    
-    clip_embeddings = np.concatenate(clip_embeddings, axis=0)
+    clip_embeddings = np.concatenate(all_embeddings, axis=0)
     print(f"CLIP embeddings shape: {clip_embeddings.shape}")
     return clip_embeddings
 
