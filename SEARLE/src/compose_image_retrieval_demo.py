@@ -13,6 +13,7 @@ from clip.model import CLIP
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import PIL.Image
+import pandas as pd
 
 from data_utils import PROJECT_ROOT, targetpad_transform, collate_fn
 from datasets import CIRRDataset, CIRCODataset, FashionIQDataset
@@ -35,7 +36,7 @@ class ComposedImageRetrievalSystem:
         
         Args:
             dataset_path: Path to the dataset
-            dataset_type: Type of dataset ('cirr', 'circo', 'fashioniq')
+            dataset_type: Type of dataset ('cirr', 'circo', 'fashioniq', 'imagenet', 'imagenet-r')
             clip_model_name: CLIP model to use
             eval_type: Evaluation type ('searle', 'searle-xl', 'phi', 'oti')
             preprocess_type: Preprocessing type ('clip', 'targetpad')
@@ -134,6 +135,49 @@ class ComposedImageRetrievalSystem:
             dataset = FashionIQDataset(
                 self.dataset_path, split, ['dress', 'toptee', 'shirt'], 'classic', self.preprocess
             )
+        elif self.dataset_type == 'imagenet':
+            df = pd.read_csv(self.dataset_path)
+            from torch.utils.data import Dataset as TorchDataset
+            class SimpleImageDataset(TorchDataset):
+                def __init__(self, df, preprocess):
+                    self.df = df
+                    self.preprocess = preprocess
+                def __len__(self):
+                    return len(self.df)
+                def __getitem__(self, idx):
+                    row = self.df.iloc[idx]
+                    img = PIL.Image.open(row['image_path']).convert('RGB')
+                    img = self.preprocess(img)
+                    return {'image': img, 'image_name': str(row.get('image_id', row.get('image_name', idx)))}
+            dataset = SimpleImageDataset(df, self.preprocess)
+        elif self.dataset_type == 'imagenet-r':
+            root = Path(self.dataset_path)
+            csv_files = list(root.glob("*.csv"))
+            if not csv_files:
+                raise ValueError("No mapping CSV found in imagenet-r directory")
+            mapping_df = pd.read_csv(csv_files[0], header=None, names=['dir_name','class_name'])
+            image_paths, image_names = [], []
+            for dir_name in mapping_df['dir_name']:
+                class_dir = root / dir_name
+                if not class_dir.exists():
+                    continue
+                for file in class_dir.iterdir():
+                    if file.is_file():
+                        image_paths.append(str(file))
+                        image_names.append(f"{dir_name}/{file.name}")
+            from torch.utils.data import Dataset as TorchDataset
+            class ImageNetRDataset(TorchDataset):
+                def __init__(self, paths, names, preprocess):
+                    self.paths = paths
+                    self.names = names
+                    self.preprocess = preprocess
+                def __len__(self):
+                    return len(self.paths)
+                def __getitem__(self, idx):
+                    img = PIL.Image.open(self.paths[idx]).convert('RGB')
+                    img = self.preprocess(img)
+                    return {'image': img, 'image_name': self.names[idx]}
+            dataset = ImageNetRDataset(image_paths, image_names, self.preprocess)
         else:
             raise ValueError(f"Unsupported dataset type: {self.dataset_type}")
             
@@ -243,7 +287,7 @@ class ComposedImageRetrievalSystem:
 def main():
     parser = ArgumentParser(description="Composed Image Retrieval Demo using SEARLE techniques")
     parser.add_argument("--dataset-path", type=str, required=True, help="Path to the dataset")
-    parser.add_argument("--dataset-type", type=str, required=True, choices=['cirr', 'circo', 'fashioniq'], 
+    parser.add_argument("--dataset-type", type=str, required=True, choices=['cirr', 'circo', 'fashioniq', 'imagenet', 'imagenet-r'],
                         help="Type of dataset")
     parser.add_argument("--clip-model-name", type=str, default='ViT-B/32', 
                         help="CLIP model to use")
