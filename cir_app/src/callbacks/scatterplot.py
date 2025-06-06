@@ -63,8 +63,10 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
         axis_title = scatterplot_fig['layout']['xaxis']['title']['text']
         if axis_title == 'umap_x':
             xq, yq = search_data['umap_x_query'], search_data['umap_y_query']
+            xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
         else:
             xq, yq = search_data['tsne_x_query'], search_data['tsne_y_query']
+            xfq, yfq = None, None  # Final query only shown for UMAP
         x1, y1, xk, yk = [], [], [], []
         
         # Ensure consistent types for comparison
@@ -87,6 +89,10 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
         if xq is not None and axis_title == 'umap_x':
             trace_q = go.Scatter(x=[xq], y=[yq], mode='markers', marker=dict(color=config.QUERY_COLOR, size=12, symbol='star'), name='Query')
             scatterplot_fig['data'].append(trace_q.to_plotly_json())
+        # Add final composed query trace for UMAP
+        if xfq is not None and axis_title == 'umap_x':
+            trace_fq = go.Scatter(x=[xfq], y=[yfq], mode='markers', marker=dict(color=config.FINAL_QUERY_COLOR, size=10, symbol='diamond'), name='Final Query')
+            scatterplot_fig['data'].append(trace_fq.to_plotly_json())
         class_counts = df.loc[topk_ids]['class_name'].value_counts()
         if len(class_counts):
             weights = wordcloud.wordcloud_weight_rescale(class_counts.values, 1, class_counts.max())

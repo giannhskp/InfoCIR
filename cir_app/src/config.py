@@ -52,5 +52,6 @@ CIR_SPLIT = 'val'                    # Dataset split for building the database
 
 # CIR search visualization colors
 QUERY_COLOR = 'magenta'
+FINAL_QUERY_COLOR = 'cyan'  # Color for the final composed query (image + text)
 TOP_K_COLOR = 'orange'
 TOP_1_COLOR = 'red' 

@@ -15,6 +15,7 @@ from src.Dataset import Dataset
 import torch
 import torch.nn.functional as F
 import pickle
+import clip
 
 # Thread lock and CIR system instance
 lock = threading.Lock()
@@ -157,12 +158,37 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             feat = cir_system.clip_model.encode_image(query_input)
             feat = F.normalize(feat.float(), dim=-1)
         feat_np = feat.cpu().numpy()
+        
+        # Compute the final composed query embedding (image + text) used for actual search
+        with torch.no_grad():
+            if cir_system.eval_type in ['phi', 'searle', 'searle-xl']:
+                # Use phi network to generate pseudo tokens
+                pseudo_tokens = cir_system.phi(feat)
+                # Create text with pseudo token placeholder
+                input_caption = f"a photo of $ that {text_prompt}"
+                tokenized_caption = clip.tokenize([input_caption], context_length=77).to(device_model)
+                # Encode text with pseudo tokens - this is the final query embedding
+                from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
+                final_query_features = encode_with_pseudo_tokens(
+                    cir_system.clip_model, tokenized_caption, pseudo_tokens
+                )
+                final_query_features = F.normalize(final_query_features)
+            else:
+                # For other eval types, use the reference image features as fallback
+                final_query_features = feat
+        
+        final_query_feat_np = final_query_features.cpu().numpy()
+        
         # UMAP transform
         umap_path = config.WORK_DIR / 'umap_reducer.pkl'
         umap_reducer = pickle.load(open(str(umap_path), 'rb'))
         umap_xy = umap_reducer.transform(feat_np)
         umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
-        # Note: We don't calculate t-SNE query coordinates since we only show Query for UMAP
+        
+        # UMAP transform for final composed query
+        final_umap_xy = umap_reducer.transform(final_query_feat_np)
+        umap_x_final_query, umap_y_final_query = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
+        
         # Delete temporary query image file
         os.unlink(tmp.name)
         store_data = {
@@ -170,6 +196,8 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             'top1_id': top1_id,
             'umap_x_query': umap_x_query,
             'umap_y_query': umap_y_query,
+            'umap_x_final_query': umap_x_final_query,
+            'umap_y_final_query': umap_y_final_query,
             'tsne_x_query': None,  # Not used since Query is only shown for UMAP
             'tsne_y_query': None   # Not used since Query is only shown for UMAP
         }

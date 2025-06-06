@@ -32,8 +32,10 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
         # Get coordinates based on the new projection
         if radio_button_value == 'UMAP':
             xq, yq = search_data['umap_x_query'], search_data['umap_y_query']
+            xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
         else:  # t-SNE
             xq, yq = search_data['tsne_x_query'], search_data['tsne_y_query']
+            xfq, yfq = None, None  # Final query only shown for UMAP
         
         # Extract data from the new scatterplot
         main_trace = new_fig['data'][0]
@@ -61,6 +63,9 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
         if xq is not None and radio_button_value == 'UMAP':
             trace_q = go.Scatter(x=[xq], y=[yq], mode='markers', marker=dict(color=config.QUERY_COLOR, size=12, symbol='star'), name='Query')
             new_fig.add_trace(trace_q)
+        if xfq is not None and radio_button_value == 'UMAP':
+            trace_fq = go.Scatter(x=[xfq], y=[yfq], mode='markers', marker=dict(color=config.FINAL_QUERY_COLOR, size=10, symbol='diamond'), name='Final Query')
+            new_fig.add_trace(trace_fq)
         
         # Keep current button states (visualization remains active)
         return new_fig, True, False
