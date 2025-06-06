@@ -14,6 +14,8 @@ This is a Dash-based web application for exploring image datasets through intera
 
 ### 1. Install dependencies:
 ```bash
+python3.11 -m venv ~/cir_app
+source ~/cir_app/bin/activate
 pip install -r requirements.txt
 ```
 

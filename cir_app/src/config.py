@@ -55,3 +55,6 @@ QUERY_COLOR = 'magenta'
 FINAL_QUERY_COLOR = 'cyan'  # Color for the final composed query (image + text)
 TOP_K_COLOR = 'orange'
 TOP_1_COLOR = 'red' 
+
+CIR_FEATURES_PATH = WORK_DIR / 'features'  # Path to store CIR features
+CIR_LOAD_FEATURES = True  # Whether to load precomputed features or not

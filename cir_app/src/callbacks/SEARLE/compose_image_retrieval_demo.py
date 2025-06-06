@@ -35,7 +35,8 @@ class ComposedImageRetrievalSystem:
     
     def __init__(self, dataset_path: str, dataset_type: str, clip_model_name: str, 
                  eval_type: str = 'searle', preprocess_type: str = 'targetpad',
-                 exp_name: Optional[str] = None, phi_checkpoint_name: Optional[str] = None):
+                 exp_name: Optional[str] = None, phi_checkpoint_name: Optional[str] = None,
+                 features_path: Optional[str] = None, load_features: bool = True):
         """
         Initialize the CIR system.
         
@@ -63,6 +64,9 @@ class ComposedImageRetrievalSystem:
         self.database_features = None
         self.database_names = None
         self.database_created = False
+
+        self.features_path = features_path
+        self.load_features = load_features
         
     def _setup_models_and_preprocessing(self):
         """Setup CLIP model, phi model (if needed), and preprocessing pipeline."""
@@ -161,7 +165,7 @@ class ComposedImageRetrievalSystem:
             raise ValueError(f"Unsupported dataset type: {self.dataset_type}")
             
         # Extract image features
-        self.database_features, self.database_names = extract_image_features(dataset, self.clip_model)
+        self.database_features, self.database_names = extract_image_features(dataset, self.clip_model, features_path=self.features_path, load_features=self.load_features)
         self.database_features = F.normalize(self.database_features.float()).to(device)
         
         self.database_created = True
