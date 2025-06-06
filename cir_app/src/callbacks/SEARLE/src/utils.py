@@ -61,12 +61,6 @@ def extract_image_features(dataset: Dataset, clip_model: CLIP, batch_size: Optio
             index_names.extend(names)
 
     index_features = torch.vstack(index_features)
-
-    if features_path:
-        os.makedirs(features_path, exist_ok=True)
-        torch.save(index_features, os.path.join(features_path, "index_features.pt"))
-        with open(os.path.join(features_path, "index_names.pkl"), "wb") as f:
-            pickle.dump(index_names, f)
     
     return index_features, index_names
 

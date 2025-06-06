@@ -8,6 +8,8 @@ import numpy as np
 from umap import UMAP
 from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader, Dataset
+import pickle
+import os
 
 from src import config
 
@@ -122,6 +124,22 @@ def generate_projection_data():
     # Save augmented dataset
     augmented_dataset.to_csv(config.AUGMENTED_DATASET_PATH, index=False)
     print(f'Augmented dataset saved to {config.AUGMENTED_DATASET_PATH}')
+    
+    # Save CLIP embeddings and names for CIR retrieval
+    features_dir = config.CIR_FEATURES_PATH
+    # ensure features directory exists
+    if isinstance(features_dir, str):
+        os.makedirs(features_dir, exist_ok=True)
+    else:
+        features_dir.mkdir(parents=True, exist_ok=True)
+    # convert numpy embeddings to tensor and save
+    features_tensor = torch.from_numpy(clip_embeddings)
+    torch.save(features_tensor, os.path.join(str(features_dir), 'index_features.pt'))
+    # save the corresponding image IDs as names
+    names_list = dataset_sample['image_id'].astype(str).tolist()
+    with open(os.path.join(str(features_dir), 'index_names.pkl'), 'wb') as f:
+        pickle.dump(names_list, f)
+    print(f"Saved CLIP embeddings and names to {features_dir}")
     
     return augmented_dataset
 
