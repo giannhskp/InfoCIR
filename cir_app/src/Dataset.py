@@ -35,7 +35,8 @@ class Dataset:
     def processed_files_exist():
         """Check if processed/augmented dataset exists"""
         features_path = Path(config.CIR_FEATURES_PATH)
-        return os.path.isfile(config.AUGMENTED_DATASET_PATH) and os.path.isfile(features_path / "index_features.pt") and os.path.isfile(features_path / "index_names.pkl") and os.path.isfile(config.WORK_DIR / "umap_reducer.pkl")
+        umap_reducer_path = Path(config.WORK_DIR)
+        return os.path.isfile(config.AUGMENTED_DATASET_PATH) and os.path.isfile(features_path / "index_features.pt") and os.path.isfile(features_path / "index_names.pkl") and os.path.isfile(umap_reducer_path / "umap_reducer.pkl")
     
     @staticmethod
     def source_files_exist():
