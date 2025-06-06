@@ -1,6 +1,8 @@
 import os
 import pandas as pd
 
+from pathlib import Path
+
 from src import config, feature_engineering
 from src.dataloaders import dataset_loader
 
@@ -32,7 +34,9 @@ class Dataset:
     @staticmethod
     def processed_files_exist():
         """Check if processed/augmented dataset exists"""
-        return os.path.isfile(config.AUGMENTED_DATASET_PATH)
+        features_path = Path(config.CIR_FEATURES_PATH)
+        umap_reducer_path = Path(config.WORK_DIR)
+        return os.path.isfile(config.AUGMENTED_DATASET_PATH) and os.path.isfile(features_path / "index_features.pt") and os.path.isfile(features_path / "index_names.pkl") and os.path.isfile(umap_reducer_path / "umap_reducer.pkl")
     
     @staticmethod
     def source_files_exist():
