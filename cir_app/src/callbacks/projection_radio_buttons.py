@@ -7,7 +7,8 @@ import plotly.graph_objects as go
 @callback(
     [Output('scatterplot', 'figure', allow_duplicate=True),
      Output('cir-visualize-button', 'disabled', allow_duplicate=True),
-     Output('cir-hide-button', 'disabled', allow_duplicate=True)],
+     Output('cir-hide-button', 'disabled', allow_duplicate=True),
+     Output('selected-image-data', 'data', allow_duplicate=True)],
     Input('projection-radio-buttons', 'value'),
     [State('cir-hide-button', 'disabled'),
      State('cir-search-data', 'data')],
@@ -19,6 +20,8 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
     
     # Create the new scatterplot
     new_fig = scatterplot.create_scatterplot_figure(radio_button_value)
+    
+    # Clean up any selected image info since coordinates will be different - not needed anymore since using store
     
     # Check if CIR results are currently visualized (hide button enabled = visualization active)
     cir_is_visualized = not hide_button_disabled and search_data is not None
@@ -68,7 +71,7 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
             new_fig.add_trace(trace_fq)
         
         # Keep current button states (visualization remains active)
-        return new_fig, True, False
+        return new_fig, True, False, None
     else:
         # No CIR visualization active, reset button states
-        return new_fig, False, True 
+        return new_fig, False, True, None 

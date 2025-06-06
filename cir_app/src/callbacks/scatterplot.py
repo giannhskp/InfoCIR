@@ -23,10 +23,11 @@ def scatterplot_is_zoomed(scatterplot_fig, zoom_data):
     return scatterplot.add_images_to_scatterplot(scatterplot_fig)
 
 @callback(
-    Output("gallery", "children"),
-    Output("wordcloud", "list"),
-    Output('histogram', 'figure'),
-    Output('scatterplot', 'figure', allow_duplicate=True),
+    [Output("gallery", "children"),
+     Output("wordcloud", "list"),
+     Output('histogram', 'figure'),
+     Output('scatterplot', 'figure', allow_duplicate=True),
+     Output('selected-image-data', 'data', allow_duplicate=True)],
     State('scatterplot', 'figure'),
     Input("scatterplot", "selectedData"),
     Input('cir-visualize-button', 'n_clicks'),
@@ -48,7 +49,7 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
         scatterplot_fig['layout']['images'] = []
         scatterplot_fig['data'][0]['marker'] = {'color': config.SCATTERPLOT_COLOR}
         scatterplot_fig['data'] = scatterplot_fig['data'][:3]
-        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None
 
     # Visualize action
     if trigger.startswith('cir-visualize-button') and search_data:
@@ -99,9 +100,16 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
             wordcloud_data = sorted([[cn, w] for cn, w in zip(class_counts.index, weights)], key=lambda x: x[1], reverse=True)
         else:
             wordcloud_data = []
-        gallery_children = gallery.create_gallery_children(df.loc[topk_ids]['image_path'].values, df.loc[topk_ids]['class_name'].values)
-        histogram_fig = histogram.draw_histogram(df.loc[topk_ids])
-        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig
+        
+        # For CIR visualization, show ALL top-k images (not limited to IMAGE_GALLERY_SIZE)
+        cir_data = df.loc[topk_ids]
+        gallery_children = gallery.create_gallery_children(
+            cir_data['image_path'].values, 
+            cir_data['class_name'].values,
+            cir_data.index.values  # Pass image IDs for proper selection
+        )
+        histogram_fig = histogram.draw_histogram(cir_data)
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None
 
     # Drag selection action
     if trigger.startswith('scatterplot'):
@@ -116,9 +124,13 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
         else:
             wordcloud_data = []
         sample = data_sel.sample(min(len(data_sel), config.IMAGE_GALLERY_SIZE), random_state=1) if len(data_sel) else data_sel
-        gallery_children = gallery.create_gallery_children(sample['image_path'].values, sample['class_name'].values)
+        gallery_children = gallery.create_gallery_children(
+            sample['image_path'].values, 
+            sample['class_name'].values,
+            sample.index.values  # Pass image IDs for proper selection
+        )
         histogram_fig = histogram.draw_histogram(data_sel)
         scatterplot.highlight_class_on_scatterplot(scatterplot_fig, None)
-        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None
 
-    return dash.no_update, dash.no_update, dash.no_update, dash.no_update 
+    return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update 

@@ -13,6 +13,176 @@ def highlight_class_on_scatterplot(scatterplot, class_names):
         colors = config.SCATTERPLOT_COLOR
     scatterplot['data'][0]['marker'] = {'color': colors}
 
+def highlight_selected_image_and_class(scatterplot, selected_image_id, class_names):
+    """Highlight a specific selected image and its class with different colors"""
+    df = Dataset.get()
+    
+    # Check if CIR traces are active
+    has_cir_traces = any(trace.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query'] 
+                        for trace in scatterplot['data'])
+    
+    if has_cir_traces:
+        # Handle CIR visualization mode: manage traces properly
+        _handle_cir_image_selection(scatterplot, selected_image_id, class_names)
+    else:
+        # Handle regular mode: just update main trace colors
+        def get_color(row):
+            if row.name == selected_image_id:
+                return config.SELECTED_IMAGE_COLOR  # Green for selected image
+            elif row['class_name'] in class_names:
+                return config.SELECTED_CLASS_COLOR  # Red for same class
+            else:
+                return config.SCATTERPLOT_COLOR  # Default for others
+        
+        colors = df.apply(get_color, axis=1)
+        scatterplot['data'][0]['marker'] = {'color': colors}
+    
+    # Update legend to include selected image trace (preserve CIR traces)
+    _update_legend_for_selected_image(scatterplot)
+
+def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
+    """Handle image selection when CIR traces are active"""
+    df = Dataset.get()
+    
+    # Find main data trace and CIR traces
+    main_trace = scatterplot['data'][0]
+    xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
+    
+    # Separate CIR traces and other traces
+    cir_traces = []
+    other_traces = []
+    selected_trace = None
+    
+    for i, trace in enumerate(scatterplot['data']):
+        if i == 0:
+            continue  # Skip main trace
+        elif trace.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query']:
+            cir_traces.append(trace)
+        elif trace.get('name') == 'Selected Image':
+            selected_trace = trace
+        else:
+            other_traces.append(trace)
+    
+    # Find coordinates for the selected image
+    selected_x, selected_y = None, None
+    for xi, yi, idx in zip(xs, ys, cds):
+        if int(idx) == selected_image_id:
+            selected_x, selected_y = xi, yi
+            break
+    
+    if selected_x is None:
+        return  # Selected image not found in data
+    
+    # Remove selected image from CIR traces and track which trace it came from
+    selected_was_top1 = False
+    for trace in cir_traces:
+        if trace.get('name') == 'Top-K':
+            # Remove selected image from Top-K trace
+            new_x, new_y = [], []
+            for xi, yi in zip(trace['x'], trace['y']):
+                if not (abs(xi - selected_x) < 1e-10 and abs(yi - selected_y) < 1e-10):
+                    new_x.append(xi)
+                    new_y.append(yi)
+            trace['x'] = new_x
+            trace['y'] = new_y
+            
+        elif trace.get('name') == 'Top-1':
+            # Check if selected image is the Top-1 and remove it
+            if (len(trace['x']) == 1 and 
+                abs(trace['x'][0] - selected_x) < 1e-10 and 
+                abs(trace['y'][0] - selected_y) < 1e-10):
+                trace['x'] = []
+                trace['y'] = []
+                selected_was_top1 = True
+    
+    # Rebuild scatterplot data with modified CIR traces
+    scatterplot['data'] = [main_trace] + cir_traces + other_traces
+    
+    # Add new selected image trace
+    selected_trace = go.Scatter(
+        x=[selected_x], 
+        y=[selected_y], 
+        mode='markers', 
+        marker=dict(color=config.SELECTED_IMAGE_COLOR, size=9), 
+        name='Selected Image'
+    )
+    scatterplot['data'].append(selected_trace.to_plotly_json())
+    
+    # Update main trace colors for class highlighting
+    def get_color(row):
+        if row.name == selected_image_id:
+            return config.SCATTERPLOT_COLOR  # Selected image handled by separate trace
+        elif row['class_name'] in class_names:
+            return config.SELECTED_CLASS_COLOR  # Red for same class
+        else:
+            return config.SCATTERPLOT_COLOR  # Default for others
+    
+    colors = df.apply(get_color, axis=1)
+    scatterplot['data'][0]['marker'] = {'color': colors}
+
+def _update_legend_for_selected_image(scatterplot):
+    """Update legend to include selected image color when an image is selected"""
+    
+    # Identify and preserve CIR traces (Top-K, Top-1, Query, Final Query) and Selected Image trace
+    cir_traces = []
+    selected_image_trace = None
+    
+    for i, trace in enumerate(scatterplot['data']):
+        if i == 0:
+            # Main data trace - keep it
+            continue
+        elif trace.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query']:
+            # CIR visualization traces - preserve them
+            cir_traces.append(trace)
+        elif trace.get('name') == 'Selected Image':
+            # Selected image trace - preserve it
+            selected_image_trace = trace
+        else:
+            # Legend traces - we'll replace these
+            pass
+    
+    # Remove all traces except the main data trace
+    scatterplot['data'] = scatterplot['data'][:1]
+    
+    # Re-add CIR traces
+    scatterplot['data'].extend(cir_traces)
+    
+    # Re-add selected image trace if it exists
+    if selected_image_trace:
+        scatterplot['data'].append(selected_image_trace)
+    
+    # Add updated legend traces
+    scatterplot['data'].append(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            name='image embedding',
+            marker=dict(size=7, color="blue", symbol='circle'),
+        ).to_plotly_json()
+    )
+    scatterplot['data'].append(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            name='selected class',
+            marker=dict(size=7, color=config.SELECTED_CLASS_COLOR, symbol='circle'),
+        ).to_plotly_json()
+    )
+    
+    # Only add "Selected Image" legend trace if there's no actual selected image trace
+    if not selected_image_trace:
+        scatterplot['data'].append(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name='Selected Image',  # Match the data trace name exactly
+                marker=dict(size=7, color=config.SELECTED_IMAGE_COLOR, symbol='circle'),
+            ).to_plotly_json()
+        )
+
 def add_images_to_scatterplot(scatterplot_fig):
     """Add images to scatterplot when zoomed in"""
     scatterplot_fig['layout']['images'] = []
