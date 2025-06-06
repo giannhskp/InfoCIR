@@ -2,7 +2,7 @@ import base64
 import threading
 import tempfile
 from io import BytesIO
-from dash import callback, Input, Output, State, html
+from dash import callback, Input, Output, State, html, callback_context
 import dash_bootstrap_components as dbc
 from PIL import Image
 from src import config
@@ -66,7 +66,8 @@ def update_search_button_state(text_prompt, upload_contents):
 @callback(
     [Output('cir-results', 'children'),
      Output('cir-search-status', 'children'),
-     Output('cir-search-results', 'data')],
+     Output('cir-search-data', 'data'),
+     Output('cir-vis-buttons', 'style')],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
     prevent_initial_call=True
@@ -76,7 +77,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
         # Clear any previous CIR visualization
-        return empty, html.Div(), None
+        return empty, html.Div(), None, {'display': 'none'}
     try:
         # Decode and save query image
         _, content_string = upload_contents.split(',')
@@ -161,18 +162,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
         umap_reducer = pickle.load(open(str(umap_path), 'rb'))
         umap_xy = umap_reducer.transform(feat_np)
         umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
-        # TSNE approximate by nearest neighbor
-        db_feats = cir_system.database_features.cpu()
-        with torch.no_grad():
-            sims = (feat.cpu() @ db_feats.T).squeeze(0)
-        idx_nn = int(torch.argmax(sims).item())
-        nn_name = cir_system.database_names[idx_nn]
-        try:
-            nn_id = int(nn_name)
-        except:
-            nn_id = nn_name
-        tsne_x_query = float(df.loc[nn_id]['tsne_x'])
-        tsne_y_query = float(df.loc[nn_id]['tsne_y'])
+        # Note: We don't calculate t-SNE query coordinates since we only show Query for UMAP
         # Delete temporary query image file
         os.unlink(tmp.name)
         store_data = {
@@ -180,10 +170,27 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             'top1_id': top1_id,
             'umap_x_query': umap_x_query,
             'umap_y_query': umap_y_query,
-            'tsne_x_query': tsne_x_query,
-            'tsne_y_query': tsne_y_query
+            'tsne_x_query': None,  # Not used since Query is only shown for UMAP
+            'tsne_y_query': None   # Not used since Query is only shown for UMAP
         }
-        return results_div, status, store_data
+        return results_div, status, store_data, {'display': 'block'}
     except Exception as e:
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none'}
+
+# Button toggle callback for visualization controls
+@callback(
+    Output('cir-visualize-button', 'disabled'),
+    Output('cir-hide-button', 'disabled'),
+    Input('cir-visualize-button', 'n_clicks'),
+    Input('cir-hide-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def toggle_visualization_buttons(vis_clicks, hide_clicks):
+    """Enable/disable Visualize and Hide buttons based on clicks"""
+    ctx = callback_context
+    trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+    if trigger == 'cir-visualize-button':
+        return True, False
+    else:
+        return False, True

@@ -1,4 +1,4 @@
-from dash import callback, Output, Input, State, dash
+from dash import callback, Output, Input, State, dash, callback_context
 from PIL import Image
 from src import config
 from src.Dataset import Dataset
@@ -29,96 +29,90 @@ def scatterplot_is_zoomed(scatterplot_fig, zoom_data):
     Output('scatterplot', 'figure', allow_duplicate=True),
     State('scatterplot', 'figure'),
     Input("scatterplot", "selectedData"),
-    Input('cir-search-results', 'data'),
+    Input('cir-visualize-button', 'n_clicks'),
+    Input('cir-hide-button', 'n_clicks'),
+    State('cir-search-data', 'data'),
     prevent_initial_call=True,
 )
-def scatterplot_is_selected(scatterplot_fig, data_selected, cir_results):
-    """Handle scatterplot selection or CIR search visualization events"""
-    # CIR search visualization branch
-    if cir_results:
+def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, hide_clicks, search_data):
+    """Unified handler for drag-select, visualize, and hide actions"""
+    ctx = callback_context
+    trigger = ctx.triggered[0]['prop_id']
+
+    # Hide action: reset everything
+    if trigger.startswith('cir-hide-button'):
+        gallery_children = []
+        wordcloud_data = []
+        from src.widgets import histogram
+        histogram_fig = histogram.draw_histogram(None)
+        scatterplot_fig['layout']['images'] = []
+        scatterplot_fig['data'][0]['marker'] = {'color': config.SCATTERPLOT_COLOR}
+        scatterplot_fig['data'] = scatterplot_fig['data'][:3]
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig
+
+    # Visualize action
+    if trigger.startswith('cir-visualize-button') and search_data:
         from src.widgets import gallery, wordcloud, histogram
         df = Dataset.get()
-        topk_ids = cir_results.get('topk_ids', [])
-        top1_id = cir_results.get('top1_id', None)
-        # Recolor dataset points
-        customdata = scatterplot_fig['data'][0]['customdata']
-        colors = [config.TOP_1_COLOR if id_ == top1_id else (config.TOP_K_COLOR if id_ in topk_ids else config.SCATTERPLOT_COLOR) for id_ in customdata]
-        scatterplot_fig['data'][0]['marker'] = {'color': colors}
-        # Clear any overlaid images
+        topk_ids = search_data.get('topk_ids', [])
+        top1_id = search_data.get('top1_id', None)
+        scatterplot_fig['data'] = scatterplot_fig['data'][:3]
         scatterplot_fig['layout']['images'] = []
-        # Add query point based on current projection axis title
+        main_trace = scatterplot_fig['data'][0]
+        xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
         axis_title = scatterplot_fig['layout']['xaxis']['title']['text']
         if axis_title == 'umap_x':
-            xq, yq = cir_results['umap_x_query'], cir_results['umap_y_query']
-        elif axis_title == 'tsne_x':
-            xq, yq = cir_results['tsne_x_query'], cir_results['tsne_y_query']
+            xq, yq = search_data['umap_x_query'], search_data['umap_y_query']
         else:
-            xq, yq = None, None
-        if xq is not None:
-            scatterplot_fig.add_trace(go.Scatter(
-                x=[xq], y=[yq], mode='markers',
-                marker=dict(color=config.QUERY_COLOR, size=12, symbol='star'),
-                name='Query'
-            ))
-        # Build wordcloud data for top-k
+            xq, yq = search_data['tsne_x_query'], search_data['tsne_y_query']
+        x1, y1, xk, yk = [], [], [], []
+        
+        # Ensure consistent types for comparison
+        top1_id_cmp = int(top1_id) if top1_id is not None else None
+        topk_ids_cmp = [int(x) for x in topk_ids]
+        
+        for xi, yi, idx in zip(xs, ys, cds):
+            idx_cmp = int(idx) if idx is not None else None
+            if idx_cmp == top1_id_cmp:
+                x1.append(xi); y1.append(yi)
+            elif idx_cmp in topk_ids_cmp:
+                xk.append(xi); yk.append(yi)
+        if xk:
+            trace_k = go.Scatter(x=xk, y=yk, mode='markers', marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
+            scatterplot_fig['data'].append(trace_k.to_plotly_json())
+        if x1:
+            trace_1 = go.Scatter(x=x1, y=y1, mode='markers', marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
+            scatterplot_fig['data'].append(trace_1.to_plotly_json())
+        # Only add Query trace for UMAP (not t-SNE, since t-SNE query position is just an approximation)
+        if xq is not None and axis_title == 'umap_x':
+            trace_q = go.Scatter(x=[xq], y=[yq], mode='markers', marker=dict(color=config.QUERY_COLOR, size=12, symbol='star'), name='Query')
+            scatterplot_fig['data'].append(trace_q.to_plotly_json())
         class_counts = df.loc[topk_ids]['class_name'].value_counts()
-        if len(class_counts) > 0:
+        if len(class_counts):
             weights = wordcloud.wordcloud_weight_rescale(class_counts.values, 1, class_counts.max())
             wordcloud_data = sorted([[cn, w] for cn, w in zip(class_counts.index, weights)], key=lambda x: x[1], reverse=True)
         else:
             wordcloud_data = []
-        # Build gallery for top-k
-        gallery_children = gallery.create_gallery_children(
-            df.loc[topk_ids]['image_path'].values,
-            df.loc[topk_ids]['class_name'].values
-        )
-        # Build histogram for top-k
+        gallery_children = gallery.create_gallery_children(df.loc[topk_ids]['image_path'].values, df.loc[topk_ids]['class_name'].values)
         histogram_fig = histogram.draw_histogram(df.loc[topk_ids])
         return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig
-    # Fallback to standard selection behavior
-    print('Scatterplot is selected')
 
-    from src.widgets import gallery, wordcloud, histogram
-    import numpy as np
+    # Drag selection action
+    if trigger.startswith('scatterplot'):
+        from src.widgets import gallery, wordcloud, histogram
+        import numpy as np
+        data_sel = scatterplot.get_data_selected_on_scatterplot(scatterplot_fig)
+        scatterplot_fig['layout']['images'] = []
+        class_counts = data_sel['class_name'].value_counts()
+        if len(class_counts):
+            weights = wordcloud.wordcloud_weight_rescale(class_counts.values, 1, class_counts.max())
+            wordcloud_data = sorted([[cn, w] for cn, w in zip(class_counts.index, weights)], key=lambda x: x[1], reverse=True)
+        else:
+            wordcloud_data = []
+        sample = data_sel.sample(min(len(data_sel), config.IMAGE_GALLERY_SIZE), random_state=1) if len(data_sel) else data_sel
+        gallery_children = gallery.create_gallery_children(sample['image_path'].values, sample['class_name'].values)
+        histogram_fig = histogram.draw_histogram(data_sel)
+        scatterplot.highlight_class_on_scatterplot(scatterplot_fig, None)
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig
 
-    data_selected = scatterplot.get_data_selected_on_scatterplot(scatterplot_fig)
-
-    # Clear images from scatterplot
-    scatterplot_fig['layout']['images'] = []
-
-    # Calculate class distribution for selected data
-    class_counts = data_selected['class_name'].value_counts()
-    
-    # Create wordcloud data
-    if len(class_counts) > 0:
-        wordcloud_weights = wordcloud.wordcloud_weight_rescale(
-            class_counts.values,
-            1,
-            class_counts.max()
-        )
-        wordcloud_data = sorted(
-            [[class_name, weight] for class_name, weight in zip(class_counts.index, wordcloud_weights)],
-            key=lambda x: x[1], 
-            reverse=True
-        )
-    else:
-        wordcloud_data = []
-
-    # Create gallery
-    sample_data = data_selected.sample(
-        min(len(data_selected), config.IMAGE_GALLERY_SIZE), 
-        random_state=1
-    ) if len(data_selected) > 0 else data_selected
-    
-    gallery_children = gallery.create_gallery_children(
-        sample_data['image_path'].values, 
-        sample_data['class_name'].values
-    )
-
-    # Create histogram
-    histogram_fig = histogram.draw_histogram(data_selected)
-
-    # Highlight selection on scatterplot
-    scatterplot.highlight_class_on_scatterplot(scatterplot_fig, None)
-
-    return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig 
+    return dash.no_update, dash.no_update, dash.no_update, dash.no_update 
