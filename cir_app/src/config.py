@@ -35,4 +35,17 @@ CLASS_NAMES_PATH = os.path.join(DATASET_ROOT_PATH, 'class_names.csv')  # Your cl
 
 # Generated/processed data paths (where the app stores its processed data)
 DATASET_PATH = WORK_DIR / 'dataset.csv'
-AUGMENTED_DATASET_PATH = WORK_DIR / 'augmented_dataset.csv' 
+AUGMENTED_DATASET_PATH = WORK_DIR / 'augmented_dataset.csv'
+
+# CLIP model configuration
+CLIP_MODEL_NAME = 'ViT-B/32'  # CLIP model to use for image retrieval
+
+# SEARLE CIR configuration
+CIR_DATASET_PATH = AUGMENTED_DATASET_PATH  # Path to CIR augmented dataset CSV
+CIR_DATASET_TYPE = 'imagenet-r'            # Dataset type: 'cirr', 'circo', or 'fashioniq'
+CIR_CLIP_MODEL_NAME = CLIP_MODEL_NAME # CLIP model to use for CIR
+CIR_EVAL_TYPE = 'searle'             # Evaluation type: 'searle', 'searle-xl', 'phi', 'oti'
+CIR_PREPROCESS_TYPE = 'targetpad'     # Preprocessing type: 'targetpad' or 'clip'
+CIR_EXP_NAME = None                  # Experiment name for phi/oti if needed
+CIR_PHI_CHECKPOINT_NAME = None       # Phi checkpoint name if using phi evaluation
+CIR_SPLIT = 'val'                    # Dataset split for building the database 
