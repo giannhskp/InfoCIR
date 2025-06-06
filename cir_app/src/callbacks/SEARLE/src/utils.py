@@ -1,3 +1,6 @@
+import os
+import pickle
+
 from typing import Optional, Tuple, List
 
 import torch
@@ -20,10 +23,17 @@ else:
 
 @torch.no_grad()
 def extract_image_features(dataset: Dataset, clip_model: CLIP, batch_size: Optional[int] = 32,
-                           num_workers: Optional[int] = 10) -> Tuple[torch.Tensor, List[str]]:
+                           num_workers: Optional[int] = 10, features_path: Optional[str] = None,
+                            load_features: bool = False) -> Tuple[torch.Tensor, List[str]]:
     """
     Extracts image features from a dataset using a CLIP model.
     """
+    if load_features and features_path:
+        index_features = torch.load(os.path.join(features_path, "index_features.pt"))
+        with open(os.path.join(features_path, "index_names.pkl"), "rb") as f:
+            index_names = pickle.load(f)
+        return index_features, index_names
+
     # Create data loader
     loader = DataLoader(dataset=dataset, batch_size=batch_size,
                         num_workers=num_workers, pin_memory=True, collate_fn=collate_fn)
@@ -51,6 +61,13 @@ def extract_image_features(dataset: Dataset, clip_model: CLIP, batch_size: Optio
             index_names.extend(names)
 
     index_features = torch.vstack(index_features)
+
+    if features_path:
+        os.makedirs(features_path, exist_ok=True)
+        torch.save(index_features, os.path.join(features_path, "index_features.pt"))
+        with open(os.path.join(features_path, "index_names.pkl"), "wb") as f:
+            pickle.dump(index_names, f)
+    
     return index_features, index_names
 
 

@@ -90,7 +90,9 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
                         eval_type=config.CIR_EVAL_TYPE,
                         preprocess_type=config.CIR_PREPROCESS_TYPE,
                         exp_name=config.CIR_EXP_NAME,
-                        phi_checkpoint_name=config.CIR_PHI_CHECKPOINT_NAME
+                        phi_checkpoint_name=config.CIR_PHI_CHECKPOINT_NAME,
+                        features_path=config.CIR_FEATURES_PATH,
+                        load_features=config.CIR_LOAD_FEATURES,
                     )
                     cir_system.create_database(split=config.CIR_SPLIT)
 
