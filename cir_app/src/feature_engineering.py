@@ -75,7 +75,7 @@ def calculate_umap(clip_embeddings, n_components=2, metric='cosine'):
         min_dist=0.1
     )
     umap_embeddings = umap_reducer.fit_transform(clip_embeddings)
-    return umap_embeddings[:, 0], umap_embeddings[:, 1]
+    return umap_embeddings[:, 0], umap_embeddings[:, 1], umap_reducer
 
 def calculate_tsne(clip_embeddings, n_components=2, metric='cosine'):
     """Calculate t-SNE projection"""
@@ -110,7 +110,7 @@ def generate_projection_data():
     clip_embeddings = calculate_clip_embeddings(dataset_sample)
     
     # Calculate projections
-    umap_x, umap_y = calculate_umap(clip_embeddings)
+    umap_x, umap_y, umap_reducer = calculate_umap(clip_embeddings)
     tsne_x, tsne_y = calculate_tsne(clip_embeddings)
     
     # Create augmented dataset
@@ -124,6 +124,11 @@ def generate_projection_data():
     # Save augmented dataset
     augmented_dataset.to_csv(config.AUGMENTED_DATASET_PATH, index=False)
     print(f'Augmented dataset saved to {config.AUGMENTED_DATASET_PATH}')
+    # Save UMAP reducer for transforming new query images at runtime
+    umap_model_path = config.WORK_DIR / 'umap_reducer.pkl'
+    with open(str(umap_model_path), 'wb') as f:
+        pickle.dump(umap_reducer, f)
+    print(f'UMAP reducer saved to {umap_model_path}')
     
     # Save CLIP embeddings and names for CIR retrieval
     features_dir = config.CIR_FEATURES_PATH

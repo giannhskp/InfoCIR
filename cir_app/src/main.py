@@ -110,6 +110,11 @@ def run_ui():
             html.Div(id='cir-query-preview', className="mb-3 query-preview"),
             # Results section
             html.Hr(),
+            # Visualization control buttons (initially hidden)
+            html.Div([
+                dbc.Button("Visualize", id="cir-visualize-button", color="primary", className="me-2", n_clicks=0, disabled=False),
+                dbc.Button("Hide", id="cir-hide-button", color="secondary", className="me-2", n_clicks=0, disabled=True)
+            ], id="cir-vis-buttons", style={'display': 'none'}, className="mb-3"),
             html.Div(id='cir-results', children=[
                 html.H5("Retrieved Images", className="mb-3"),
                 html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", 
@@ -139,7 +144,9 @@ def run_ui():
             # CIR Interface
             dbc.Row([
                 dbc.Col(cir_interface, width=12)
-            ], className='mt-4')
+            ], className='mt-4'),
+            # Store for CIR search raw data
+            dcc.Store(id='cir-search-data', data=None)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )
