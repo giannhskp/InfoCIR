@@ -49,3 +49,6 @@ CIR_PREPROCESS_TYPE = 'targetpad'     # Preprocessing type: 'targetpad' or 'clip
 CIR_EXP_NAME = None                  # Experiment name for phi/oti if needed
 CIR_PHI_CHECKPOINT_NAME = None       # Phi checkpoint name if using phi evaluation
 CIR_SPLIT = 'val'                    # Dataset split for building the database 
+
+CIR_FEATURES_PATH = WORK_DIR / 'features'  # Path to store CIR features
+CIR_LOAD_FEATURES = True  # Whether to load precomputed features or not
