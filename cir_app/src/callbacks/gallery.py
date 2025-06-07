@@ -2,17 +2,19 @@ import dash
 from dash import callback, Output, Input, ALL, no_update, State, clientside_callback, ClientsideFunction
 from dash.exceptions import PreventUpdate
 from src.widgets import scatterplot
+import plotly.graph_objects as go
 
 @callback(
     [Output('scatterplot', 'figure', allow_duplicate=True),
      Output('selected-image-data', 'data'),
      Output('selected-gallery-image-id', 'data')],
     [State('scatterplot', 'figure'),
-     State('selected-image-data', 'data')],
+     State('selected-image-data', 'data'),
+     State('selected-gallery-image-id', 'data')],
     Input({'type': 'gallery-card', 'index': ALL}, 'n_clicks'),
     prevent_initial_call=True,
 )
-def gallery_image_is_clicked(scatterplot_fig, selected_image_data, n_clicks):
+def gallery_image_is_clicked(scatterplot_fig, selected_image_data, current_selected_id, n_clicks):
     """Handle gallery image clicks to highlight class on scatterplot and track selected image"""
     if all(e is None for e in n_clicks):
         return no_update, no_update, no_update
@@ -20,6 +22,14 @@ def gallery_image_is_clicked(scatterplot_fig, selected_image_data, n_clicks):
     print('Gallery is clicked')
     triggered_id = dash.callback_context.triggered_id['index']
     print(f"Triggered ID: {triggered_id}")
+    print(f"Current selected ID: {current_selected_id}")
+    
+    # Check if clicking the same image again (toggle deselection)
+    if triggered_id == current_selected_id:
+        print("Deselecting currently selected image")
+        # Restore the scatterplot to its state before selection
+        _deselect_current_image(scatterplot_fig, selected_image_data)
+        return scatterplot_fig, None, None
     
     try:
         # Parse the new string format
@@ -144,6 +154,76 @@ def _create_selected_image_data(scatterplot_fig, image_id):
         'y': selected_y,
         'was_top1': selected_was_top1
     } 
+
+def _deselect_current_image(scatterplot_fig, selected_image_data):
+    """Deselect the currently selected image and restore scatterplot state"""
+    # Remove the "Selected Image" trace if it exists
+    _remove_selected_image_trace(scatterplot_fig)
+    
+    # Check if CIR traces are active
+    has_cir_traces = any(trace.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query'] 
+                        for trace in scatterplot_fig['data'])
+    
+    if has_cir_traces and selected_image_data:
+        # If we have CIR data, restore the previously selected image to its CIR trace
+        _restore_previous_selected_image(scatterplot_fig, selected_image_data)
+    
+    # Reset the main trace colors to remove class highlighting
+    _reset_main_trace_colors(scatterplot_fig)
+    
+    # Update legend to remove selected image references
+    _update_legend_for_deselection(scatterplot_fig)
+
+
+def _remove_selected_image_trace(scatterplot_fig):
+    """Remove the 'Selected Image' trace from the scatterplot"""
+    traces_to_keep = []
+    for trace in scatterplot_fig['data']:
+        if trace.get('name') != 'Selected Image':
+            traces_to_keep.append(trace)
+    scatterplot_fig['data'] = traces_to_keep
+
+
+def _reset_main_trace_colors(scatterplot_fig):
+    """Reset the main trace colors to default (remove class highlighting)"""
+    from src import config
+    main_trace = scatterplot_fig['data'][0]  # Main dataset trace
+    
+    # Reset to default color for all points
+    main_trace['marker'] = {'color': config.SCATTERPLOT_COLOR}
+
+
+def _update_legend_for_deselection(scatterplot_fig):
+    """Update legend after deselection to remove selected image references"""
+    from src import config
+    
+    # Identify and preserve CIR traces (Top-K, Top-1, Query, Final Query)
+    cir_traces = []
+    
+    for i, trace in enumerate(scatterplot_fig['data']):
+        if i == 0:
+            # Main data trace - keep it
+            continue
+        elif trace.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query']:
+            # CIR visualization traces - preserve them
+            cir_traces.append(trace)
+        else:
+            # Legend traces - we'll replace these
+            pass
+    
+    # Keep only the main data trace and CIR traces
+    scatterplot_fig['data'] = scatterplot_fig['data'][:1] + cir_traces
+    
+    # Add basic legend trace for image embeddings
+    scatterplot_fig['data'].append(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            name='image embedding',
+            marker=dict(size=7, color="blue", symbol='circle'),
+        ).to_plotly_json()
+    )
 
 # Clientside callback to handle gallery highlighting via direct DOM manipulation (image-based)
 clientside_callback(
