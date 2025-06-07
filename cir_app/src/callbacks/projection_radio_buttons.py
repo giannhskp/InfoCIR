@@ -52,21 +52,29 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
             elif idx_cmp in topk_ids_cmp:
                 xk.append(xi); yk.append(yi)
         
-        # Add CIR traces
+        # Add CIR traces using plotly's add_trace method
         if xk:
             trace_k = go.Scatter(x=xk, y=yk, mode='markers', marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
-            new_scatterplot_fig['data'].append(trace_k.to_plotly_json())
+            new_scatterplot_fig.add_trace(trace_k)
         if x1:
             trace_1 = go.Scatter(x=x1, y=y1, mode='markers', marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
-            new_scatterplot_fig['data'].append(trace_1.to_plotly_json())
+            new_scatterplot_fig.add_trace(trace_1)
         # Only add Query trace for UMAP
         if xq is not None and axis_title == 'umap_x':
             trace_q = go.Scatter(x=[xq], y=[yq], mode='markers', marker=dict(color=config.QUERY_COLOR, size=12, symbol='star'), name='Query')
-            new_scatterplot_fig['data'].append(trace_q.to_plotly_json())
+            new_scatterplot_fig.add_trace(trace_q)
         # Add final composed query trace for UMAP
         if xfq is not None and axis_title == 'umap_x':
             trace_fq = go.Scatter(x=[xfq], y=[yfq], mode='markers', marker=dict(color=config.FINAL_QUERY_COLOR, size=10, symbol='diamond'), name='Final Query')
-            new_scatterplot_fig['data'].append(trace_fq.to_plotly_json())
+            new_scatterplot_fig.add_trace(trace_fq)
     
     # Clear selected image data and gallery highlighting when changing projections
-    return new_scatterplot_fig, False, True, None, [] 
+    # Preserve current CIR visualization state (don't reset button states)
+    if hide_button_disabled:
+        # CIR is currently hidden: visualize enabled, hide disabled
+        visualize_disabled, hide_disabled = False, True
+    else:
+        # CIR is currently visible: visualize disabled, hide enabled  
+        visualize_disabled, hide_disabled = True, False
+    
+    return new_scatterplot_fig, visualize_disabled, hide_disabled, None, [] 
