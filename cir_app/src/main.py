@@ -148,7 +148,9 @@ def run_ui():
             # Store for CIR search raw data
             dcc.Store(id='cir-search-data', data=None),
             # Store for selected image info in CIR mode
-            dcc.Store(id='selected-image-data', data=None)
+            dcc.Store(id='selected-image-data', data=None),
+            # Store for selected gallery image ID (for highlighting in images tab)
+            dcc.Store(id='selected-gallery-image-id', data=None)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )

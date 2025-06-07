@@ -24,18 +24,20 @@ def scatterplot_is_zoomed(scatterplot_fig, zoom_data):
 
 @callback(
     [Output("gallery", "children"),
-     Output("wordcloud", "list"),
-     Output('histogram', 'figure'),
-     Output('scatterplot', 'figure', allow_duplicate=True),
-     Output('selected-image-data', 'data', allow_duplicate=True)],
+    Output("wordcloud", "list"),
+    Output('histogram', 'figure'),
+    Output('scatterplot', 'figure', allow_duplicate=True),
+     Output('selected-image-data', 'data', allow_duplicate=True),
+     Output('selected-gallery-image-id', 'data', allow_duplicate=True)],
     State('scatterplot', 'figure'),
     Input("scatterplot", "selectedData"),
     Input('cir-visualize-button', 'n_clicks'),
     Input('cir-hide-button', 'n_clicks'),
     State('cir-search-data', 'data'),
+    State('selected-gallery-image-id', 'data'),
     prevent_initial_call=True,
 )
-def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, hide_clicks, search_data):
+def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, hide_clicks, search_data, selected_gallery_image_id):
     """Unified handler for drag-select, visualize, and hide actions"""
     ctx = callback_context
     trigger = ctx.triggered[0]['prop_id']
@@ -49,7 +51,7 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
         scatterplot_fig['layout']['images'] = []
         scatterplot_fig['data'][0]['marker'] = {'color': config.SCATTERPLOT_COLOR}
         scatterplot_fig['data'] = scatterplot_fig['data'][:3]
-        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None, None
 
     # Visualize action
     if trigger.startswith('cir-visualize-button') and search_data:
@@ -106,10 +108,11 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
         gallery_children = gallery.create_gallery_children(
             cir_data['image_path'].values, 
             cir_data['class_name'].values,
-            cir_data.index.values  # Pass image IDs for proper selection
+            cir_data.index.values,  # Pass image IDs for proper selection
+            selected_gallery_image_id  # Pass selected image ID for highlighting
         )
         histogram_fig = histogram.draw_histogram(cir_data)
-        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None, selected_gallery_image_id
 
     # Drag selection action
     if trigger.startswith('scatterplot'):
@@ -127,10 +130,11 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, visualize_clicks, 
         gallery_children = gallery.create_gallery_children(
             sample['image_path'].values, 
             sample['class_name'].values,
-            sample.index.values  # Pass image IDs for proper selection
+            sample.index.values,  # Pass image IDs for proper selection
+            None  # Clear selected image ID for new selections
         )
         histogram_fig = histogram.draw_histogram(data_sel)
         scatterplot.highlight_class_on_scatterplot(scatterplot_fig, None)
-        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None
+        return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None, None
 
-    return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update 
+    return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update 

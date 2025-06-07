@@ -8,44 +8,40 @@ import plotly.graph_objects as go
     [Output('scatterplot', 'figure', allow_duplicate=True),
      Output('cir-visualize-button', 'disabled', allow_duplicate=True),
      Output('cir-hide-button', 'disabled', allow_duplicate=True),
-     Output('selected-image-data', 'data', allow_duplicate=True)],
+     Output('selected-image-data', 'data', allow_duplicate=True),
+     Output('selected-gallery-image-id', 'data', allow_duplicate=True)],
     Input('projection-radio-buttons', 'value'),
     [State('cir-hide-button', 'disabled'),
      State('cir-search-data', 'data')],
     prevent_initial_call=True,
 )
 def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search_data):
-    """Handle projection button changes and preserve CIR visualization state"""
-    print('Radio button is clicked')
+    """Handle projection radio button clicks"""
+    print('Projection radio button is clicked')
+    new_scatterplot_fig = scatterplot.create_scatterplot_figure(radio_button_value)
     
-    # Create the new scatterplot
-    new_fig = scatterplot.create_scatterplot_figure(radio_button_value)
-    
-    # Clean up any selected image info since coordinates will be different - not needed anymore since using store
-    
-    # Check if CIR results are currently visualized (hide button enabled = visualization active)
-    cir_is_visualized = not hide_button_disabled and search_data is not None
-    
-    if cir_is_visualized:
-        # Re-apply CIR visualization to the new scatterplot
+    # If CIR is active and visible, re-add the visualization traces
+    if search_data and not hide_button_disabled:  # hide_button_disabled=False means CIR is visible
         df = Dataset.get()
         topk_ids = search_data.get('topk_ids', [])
         top1_id = search_data.get('top1_id', None)
         
-        # Get coordinates based on the new projection
-        if radio_button_value == 'UMAP':
+        # Get trace data for the new projection
+        main_trace = new_scatterplot_fig['data'][0]
+        xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
+        
+        # Get query coordinates based on projection type
+        axis_title = new_scatterplot_fig['layout']['xaxis']['title']['text']
+        if axis_title == 'umap_x':
             xq, yq = search_data['umap_x_query'], search_data['umap_y_query']
             xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
-        else:  # t-SNE
+        else:
             xq, yq = search_data['tsne_x_query'], search_data['tsne_y_query']
             xfq, yfq = None, None  # Final query only shown for UMAP
         
-        # Extract data from the new scatterplot
-        main_trace = new_fig['data'][0]
-        xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
-        
-        # Find coordinates for top-k and top-1
         x1, y1, xk, yk = [], [], [], []
+        
+        # Ensure consistent types for comparison
         top1_id_cmp = int(top1_id) if top1_id is not None else None
         topk_ids_cmp = [int(x) for x in topk_ids]
         
@@ -56,22 +52,21 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
             elif idx_cmp in topk_ids_cmp:
                 xk.append(xi); yk.append(yi)
         
-        # Add CIR traces to the figure
+        # Add CIR traces
         if xk:
             trace_k = go.Scatter(x=xk, y=yk, mode='markers', marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
-            new_fig.add_trace(trace_k)
+            new_scatterplot_fig['data'].append(trace_k.to_plotly_json())
         if x1:
             trace_1 = go.Scatter(x=x1, y=y1, mode='markers', marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
-            new_fig.add_trace(trace_1)
-        if xq is not None and radio_button_value == 'UMAP':
+            new_scatterplot_fig['data'].append(trace_1.to_plotly_json())
+        # Only add Query trace for UMAP
+        if xq is not None and axis_title == 'umap_x':
             trace_q = go.Scatter(x=[xq], y=[yq], mode='markers', marker=dict(color=config.QUERY_COLOR, size=12, symbol='star'), name='Query')
-            new_fig.add_trace(trace_q)
-        if xfq is not None and radio_button_value == 'UMAP':
+            new_scatterplot_fig['data'].append(trace_q.to_plotly_json())
+        # Add final composed query trace for UMAP
+        if xfq is not None and axis_title == 'umap_x':
             trace_fq = go.Scatter(x=[xfq], y=[yfq], mode='markers', marker=dict(color=config.FINAL_QUERY_COLOR, size=10, symbol='diamond'), name='Final Query')
-            new_fig.add_trace(trace_fq)
-        
-        # Keep current button states (visualization remains active)
-        return new_fig, True, False, None
-    else:
-        # No CIR visualization active, reset button states
-        return new_fig, False, True, None 
+            new_scatterplot_fig['data'].append(trace_fq.to_plotly_json())
+    
+    # Clear selected image data and gallery highlighting when changing projections
+    return new_scatterplot_fig, False, True, None, None 
