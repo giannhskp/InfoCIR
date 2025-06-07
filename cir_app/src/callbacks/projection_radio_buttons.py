@@ -9,7 +9,7 @@ import plotly.graph_objects as go
      Output('cir-visualize-button', 'disabled', allow_duplicate=True),
      Output('cir-hide-button', 'disabled', allow_duplicate=True),
      Output('selected-image-data', 'data', allow_duplicate=True),
-     Output('selected-gallery-image-id', 'data', allow_duplicate=True)],
+     Output('selected-gallery-image-ids', 'data', allow_duplicate=True)],
     Input('projection-radio-buttons', 'value'),
     [State('cir-hide-button', 'disabled'),
      State('cir-search-data', 'data')],
@@ -69,4 +69,4 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
             new_scatterplot_fig['data'].append(trace_fq.to_plotly_json())
     
     # Clear selected image data and gallery highlighting when changing projections
-    return new_scatterplot_fig, False, True, None, None 
+    return new_scatterplot_fig, False, True, None, [] 

@@ -8,17 +8,22 @@ def create_gallery():
     """Create gallery component"""
     return html.Div([], id='gallery', className='stretchy-widget border-widget gallery')
 
-def create_gallery_children(image_paths, class_names, image_ids=None, selected_image_id=None):
+def create_gallery_children(image_paths, class_names, image_ids=None, selected_image_ids=None):
     """Create gallery children components from image paths, class names, and optionally image IDs
     
     Args:
         image_paths: List of image file paths
         class_names: List of class names for each image
         image_ids: Optional list of image IDs
-        selected_image_id: ID of the currently selected image (for highlighting)
+        selected_image_ids: List of currently selected image identifiers (for highlighting)
     """
     image_rows = []
     image_id = 0
+    
+    # Initialize selected identifiers set for fast lookup
+    selected_identifiers = set()
+    if selected_image_ids:
+        selected_identifiers = set(selected_image_ids)
     
     for i in range(0, len(image_paths), config.IMAGE_GALLERY_ROW_SIZE):
         image_cols = []
@@ -41,16 +46,12 @@ def create_gallery_children(image_paths, class_names, image_ids=None, selected_i
                         img_id = int(img_id)
                     # Use string format that encodes both class name and image ID
                     identifier = f"image_{img_id}_{class_name}"
-                    current_img_id = img_id
                 else:
                     # Backwards compatibility: just use class name
                     identifier = f"class_{class_name}"
-                    current_img_id = None
                 
                 # Determine if this image is selected
-                is_selected = (selected_image_id is not None and 
-                             current_img_id is not None and 
-                             int(current_img_id) == int(selected_image_id))
+                is_selected = identifier in selected_identifiers
                 
                 # Apply different styling based on selection state
                 if is_selected:
