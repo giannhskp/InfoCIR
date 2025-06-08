@@ -44,6 +44,9 @@ AUGMENTED_DATASET_PATH = WORK_DIR / 'augmented_dataset.csv'
 # CLIP model configuration
 CLIP_MODEL_NAME = 'ViT-B/32'  # CLIP model to use for image retrieval
 
+# Prompt enhancement configuration
+ENHANCEMENT_CANDIDATE_PROMPTS = 20  # Number of candidate prompts to generate for enhancement
+
 # SEARLE CIR configuration
 CIR_DATASET_PATH = AUGMENTED_DATASET_PATH  # Path to CIR augmented dataset CSV
 CIR_DATASET_TYPE = 'imagenet-r'            # Dataset type: 'cirr', 'circo', or 'fashioniq'

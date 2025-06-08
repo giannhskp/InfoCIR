@@ -19,6 +19,7 @@ import clip
 from dash.exceptions import PreventUpdate
 from dash import ALL
 import json
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # Thread lock and CIR system instance
 lock = threading.Lock()
@@ -226,7 +227,10 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             'umap_x_final_query': umap_x_final_query,
             'umap_y_final_query': umap_y_final_query,
             'tsne_x_query': None,  # Not used since Query is only shown for UMAP
-            'tsne_y_query': None   # Not used since Query is only shown for UMAP
+            'tsne_y_query': None,  # Not used since Query is only shown for UMAP
+            'upload_contents': upload_contents,
+            'text_prompt': text_prompt,
+            'top_n': top_n
         }
         # Show visualize button, hide Run CIR
         return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}
@@ -276,7 +280,8 @@ def update_enhance_button_state(wrapper_classnames):
     return True, 'secondary'
 
 @callback(
-    Output({'type': 'cir-result-card', 'index': ALL}, 'className'),
+    [Output({'type': 'cir-result-card', 'index': ALL}, 'className'),
+     Output('cir-selected-image-id', 'data')],
     Input({'type': 'cir-result-card', 'index': ALL}, 'n_clicks'),
     [State({'type': 'cir-result-card', 'index': ALL}, 'className')],
     prevent_initial_call=True
@@ -317,4 +322,163 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames):
                 class_names.append('result-card-wrapper selected')  # Select
         else:
             class_names.append('result-card-wrapper')  # Deselect all others
-    return class_names
+    
+    # Determine selected image id or deselect
+    if clicked_card_currently_selected:
+        selected_image_id = None
+    else:
+        selected_image_id = selected_index
+    return class_names, selected_image_id
+
+# New callback to enhance the user prompt and evaluate against the selected image
+@callback(
+    Output('cir-search-status', 'children', allow_duplicate=True),
+    Input('enhance-prompt-button', 'n_clicks'),
+    [State('cir-search-data', 'data'), State('cir-selected-image-id', 'data')],
+    prevent_initial_call=True
+)
+def enhance_prompt(n_clicks, search_data, selected_image_id):
+    """
+    Enhance the user's prompt via a small LLM, compare each to the selected image, choose the best,
+    rerun CIR with that prompt, and display diagnostics.
+    """
+    import os
+    # Guard against missing data
+    if not search_data or selected_image_id is None:
+        raise PreventUpdate
+
+    # Reconstruct query image file
+    _, content_string = search_data['upload_contents'].split(',')
+    decoded = base64.b64decode(content_string)
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    tmp.write(decoded)
+    tmp.close()
+
+    # Prepare LLM for prompt enhancement using Mistral-7B-Instruct
+    N = config.ENHANCEMENT_CANDIDATE_PROMPTS  # Number of candidate prompts to generate
+    original_prompt = search_data['text_prompt']
+    MODEL_NAME = 'mistralai/Mistral-7B-Instruct-v0.2'
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+    torch_dtype = torch.float16 if DEVICE == 'cuda' else torch.float32
+    print(f"Loading enhancement model {MODEL_NAME} on {DEVICE}...")  # Debug log
+    os.environ['HF_TOKEN'] = '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'
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch_dtype,
+        device_map='auto'
+    )
+    instruction = f"""
+    You are an assistant helping improve short prompts for image retrieval. 
+    Given a query like: "{original_prompt}", generate one short, reworded version 
+    that retains the original meaning but adds slight variety or detail. 
+    Do NOT describe scenes or characters. Just rephrase the original style-focused prompt.
+
+    Original prompt: "{original_prompt}"
+
+    Return only one short enhanced prompt enclosed inside <ANSWER> </ANSWER> tags.
+    """
+
+    formatted_prompt = f"<s>[INST] {instruction.strip()} [/INST]"
+    inputs = tokenizer(formatted_prompt, return_tensors='pt').to(DEVICE)
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=64,
+        do_sample=True,
+        temperature=0.8,
+        top_p=0.9,
+        num_return_sequences=N
+    )
+    results = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+    print(results)
+    # Extract the enhanced prompt from model output
+    # Extract enhanced prompts from between <ANSWER> tags (case-insensitive)
+    prompts = []
+    for i, result in enumerate(results):
+        
+        # First extract only the response part after [/INST]
+        inst_idx = result.find('[/INST]')
+        if inst_idx == -1:
+            print(f"No [/INST] found in result {i+1}")
+            continue
+        
+        response_part = result[inst_idx + 7:]  # Skip '[/INST]'
+        print(f"Response part: '{response_part}'")
+        
+        # Now look for ANSWER tags in the response part only
+        start_tag = '<ANSWER>'
+        end_tag = '</ANSWER>'
+        start_idx = response_part.find(start_tag)
+        end_idx = response_part.find(end_tag)
+        
+        if start_idx != -1 and end_idx != -1:
+            prompt = response_part[start_idx + len(start_tag):end_idx].strip()
+            if prompt:  # Only add non-empty prompts
+                prompts.append(prompt)
+            else:
+                print(f"Prompt was empty after stripping for result {i+1}")
+    
+    # If no valid prompts found, use original as fallback
+    if not prompts:
+        print("No prompts extracted, using original as fallback")
+        prompts = [original_prompt]
+    
+    print(f"Final prompts list: {prompts}")
+
+    # Prepare ideal image embedding
+    df = Dataset.get()
+    try:
+        ideal_idx = int(selected_image_id)
+    except:
+        ideal_idx = selected_image_id
+    ideal_path = df.loc[ideal_idx]['image_path']
+    ideal_img = Image.open(ideal_path).convert('RGB')
+    device_model = next(cir_system.clip_model.parameters()).device
+    ideal_input = cir_system.preprocess(ideal_img).unsqueeze(0).to(device_model)
+    with torch.no_grad():
+        ideal_feat = cir_system.clip_model.encode_image(ideal_input)
+        ideal_feat = F.normalize(ideal_feat.float(), dim=-1).squeeze(0)
+
+    print(prompts)
+    # Score each candidate prompt
+    sims = []
+    for p in prompts:
+        # Encode composed query
+        query_img = Image.open(tmp.name).convert('RGB')
+        q_input = cir_system.preprocess(query_img).unsqueeze(0).to(device_model)
+        with torch.no_grad():
+            img_feat = cir_system.clip_model.encode_image(q_input)
+            img_feat = F.normalize(img_feat.float(), dim=-1)
+            if cir_system.eval_type in ['phi','searle','searle-xl']:
+                pseudo = cir_system.phi(img_feat)
+                cap = f"a photo of $ that {p}"
+                tokenized = clip.tokenize([cap], context_length=77).to(device_model)
+                from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
+                qf = encode_with_pseudo_tokens(cir_system.clip_model, tokenized, pseudo)
+                qf = F.normalize(qf)
+            else:
+                qf = img_feat
+        sims.append(float((qf @ ideal_feat).item()))
+
+    # Select best prompt by highest similarity
+    best_idx = sims.index(max(sims))
+    best_prompt = prompts[best_idx]
+
+    # Rerun CIR with best prompt
+    full_results = cir_system.query(tmp.name, best_prompt, search_data['top_n'])
+    # Find ideal image position
+    position = next((i+1 for i,(name,_) in enumerate(full_results) if str(name)==str(selected_image_id)), None)
+
+    # Clean up temporary file
+    os.unlink(tmp.name)
+
+    # Build display
+    lines = []
+    lines.append(html.B("Generated prompts and similarity scores:"))
+    lines.append(html.Ul([html.Li(f"{i+1}. {p} – {s:.4f}") for i,(p,s) in enumerate(zip(prompts,sims))]))
+    lines.append(html.P(f"Best prompt: {best_prompt}"))
+    lines.append(html.B("CIR results for best prompt:"))
+    lines.append(html.Ul([html.Li(f"{i+1}. {name} (score: {score:.4f})") for i,(name,score) in enumerate(full_results)]))
+    lines.append(html.P(f"Ideal image position: {position}"))
+
+    return lines
