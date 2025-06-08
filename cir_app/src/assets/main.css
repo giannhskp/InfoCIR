@@ -167,4 +167,26 @@ html, body {
 }
 .legendtext {
    cursor: default;
+}
+
+/* Make CIR result cards clickable and highlightable */
+.result-card {
+    cursor: pointer;
+}
+
+.result-card.selected {
+    background-color: #d4edda;
+    border: 2px solid #28a745;
+}
+
+/* Make CIR result wrapper clickable */
+.result-card-wrapper {
+    cursor: pointer;
+    display: inline-block;
+}
+
+/* Highlight inner card when wrapper is selected */
+.result-card-wrapper.selected .result-card {
+    background-color: #d4edda;
+    border: 2px solid #28a745;
 } 

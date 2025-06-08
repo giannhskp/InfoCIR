@@ -16,6 +16,9 @@ import torch
 import torch.nn.functional as F
 import pickle
 import clip
+from dash.exceptions import PreventUpdate
+from dash import ALL
+import json
 
 # Thread lock and CIR system instance
 lock = threading.Lock()
@@ -111,7 +114,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
         # Build result cards using paths from the loaded dataset
         cards = []
         df = Dataset.get()
-        for img_name, score in results:
+        for card_index, (img_name, score) in enumerate(results):
             img_path = None
             try:
                 # Try numeric index lookup
@@ -127,10 +130,31 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
                 continue
             data = open(img_path, 'rb').read()
             src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
-            card = dbc.Card(dbc.CardBody([
+            
+            # Create card body with score
+            card_body = dbc.CardBody([
                 html.Img(src=src, className='img-fluid', style={'maxHeight':'150px','width':'auto'}),
                 html.P(f"Score: {score:.4f}", className='small text-center mt-1')
-            ]), className='result-card')
+            ])
+            
+            # First image (top-1) is not clickable
+            if card_index == 0:
+                inner_card = dbc.Card(card_body, className='result-card')
+                card = html.Div(
+                    [inner_card,
+                     html.Div("TOP-1", className='badge bg-warning position-absolute top-0 start-0 m-1')],
+                    className='result-card-wrapper position-relative',
+                    style={'cursor': 'default'}  # Override pointer cursor for first card
+                )
+            else:
+                # Other images are clickable
+                inner_card = dbc.Card(card_body, className='result-card')
+                card = html.Div(
+                    inner_card,
+                    id={'type': 'cir-result-card', 'index': img_name},
+                    n_clicks=0,
+                    className='result-card-wrapper'
+                )
             cards.append(card)
 
         rows = []
@@ -233,3 +257,64 @@ def toggle_cir_visualization(n_clicks, current_state):
         return 'Hide CIR results', 'warning', {'display': 'block', 'color': 'black'}, True
     else:  # Now hidden
         return 'Visualize CIR results', 'success', {'display': 'block', 'color': 'black'}, False
+
+# Disabled dynamic enhance button creation; static button is in layout
+
+# New callback to update the 'Enhance prompt' button based on selection
+@callback(
+    [Output('enhance-prompt-button', 'disabled'),
+     Output('enhance-prompt-button', 'color')],
+    Input({'type': 'cir-result-card', 'index': ALL}, 'className')
+)
+def update_enhance_button_state(wrapper_classnames):
+    """
+    Enable the Enhance prompt button when a result is selected; otherwise keep it disabled.
+    """
+    # If any wrapper has the 'selected' class, enable button
+    if any('selected' in cn for cn in wrapper_classnames):
+        return False, 'primary'
+    return True, 'secondary'
+
+@callback(
+    Output({'type': 'cir-result-card', 'index': ALL}, 'className'),
+    Input({'type': 'cir-result-card', 'index': ALL}, 'n_clicks'),
+    [State({'type': 'cir-result-card', 'index': ALL}, 'className')],
+    prevent_initial_call=True
+)
+def toggle_cir_result_selection(n_clicks_list, current_classnames):
+    """
+    Toggle selection highlight for CIR result cards, allowing only one selected at a time.
+    Clicking the same card again will deselect it.
+    """
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    # Get index of clicked card
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    try:
+        selected_dict = json.loads(triggered_id)
+        selected_index = selected_dict.get('index')
+    except Exception:
+        selected_index = None
+    
+    # Check if the clicked card is already selected
+    clicked_card_currently_selected = False
+    for i, input_dict in enumerate(ctx.inputs_list[0]):
+        if input_dict['id'].get('index') == selected_index:
+            if 'selected' in current_classnames[i]:
+                clicked_card_currently_selected = True
+            break
+    
+    # Build className list in order of inputs
+    class_names = []
+    for input in ctx.inputs_list[0]:
+        idx = input['id'].get('index')
+        if idx == selected_index:
+            # If already selected, deselect it; otherwise select it
+            if clicked_card_currently_selected:
+                class_names.append('result-card-wrapper')  # Deselect
+            else:
+                class_names.append('result-card-wrapper selected')  # Select
+        else:
+            class_names.append('result-card-wrapper')  # Deselect all others
+    return class_names

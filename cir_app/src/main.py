@@ -114,7 +114,14 @@ def run_ui():
                 html.H5("Retrieved Images", className="mb-3"),
                 html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", 
                         className="text-muted text-center p-4")
-            ])
+            ]),
+            # Container for the Enhance Prompt button (always present, disabled until selection)
+            html.Div(
+                dbc.Button(
+                    "Enhance prompt", id='enhance-prompt-button', color='secondary', disabled=True
+                ),
+                id='cir-enhance-container', className='d-flex justify-content-end mt-2'
+            ),
         ])
     ], className="mt-4")
 
