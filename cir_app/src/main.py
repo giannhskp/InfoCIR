@@ -125,6 +125,15 @@ def run_ui():
             dbc.Stack([
                 projection_radio_buttons_widget,
                 html.Div([
+                    html.A(
+                        dbc.Button('Run CIR', 
+                                   id='cir-run-button',
+                                   color='info',
+                                   class_name='header-button',
+                                   style={'display': 'block', 'color': 'black'}),
+                        href='#cir-interface',
+                        style={'textDecoration': 'none'}
+                    ),
                     dbc.Button('Visualize CIR results', 
                                id='cir-toggle-button',
                                color="success",
@@ -142,11 +151,12 @@ def run_ui():
                 dbc.Col(scatterplot_widget, width=6, className='main-col'),
                 dbc.Col(right_tab, width=6, className='main-col')
             ], className='h-100', justify='between'),
-            # ], className='mt-4', justify='between'),
-            # CIR Interface
-            dbc.Row([
-                dbc.Col(cir_interface, width=12)
-            ], className='mt-4'),
+            # CIR Interface anchor for scrolling
+            html.Div(id='cir-interface', children=[
+                dbc.Row([
+                    dbc.Col(cir_interface, width=12)
+                ], className='mt-4')
+            ]),
             # Store for CIR search raw data
             dcc.Store(id='cir-search-data', data=None),
             # Store for CIR toggle state (True = visualized, False = hidden)

@@ -68,7 +68,8 @@ def update_search_button_state(text_prompt, upload_contents):
     [Output('cir-results', 'children'),
      Output('cir-search-status', 'children'),
      Output('cir-search-data', 'data'),
-     Output('cir-toggle-button', 'style')],
+     Output('cir-toggle-button', 'style', allow_duplicate=True),
+     Output('cir-run-button', 'style')],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
     prevent_initial_call=True
@@ -77,8 +78,8 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
-        # Clear any previous CIR visualization
-        return empty, html.Div(), None, {'display': 'none'}
+        # Show Run CIR button, hide visualize button
+        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}
     try:
         # Decode and save query image
         _, content_string = upload_contents.split(',')
@@ -203,10 +204,12 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             'tsne_x_query': None,  # Not used since Query is only shown for UMAP
             'tsne_y_query': None   # Not used since Query is only shown for UMAP
         }
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}
+        # Show visualize button, hide Run CIR
+        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}
     except Exception as e:
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none'}
+        # On error, hide visualize button, show Run CIR
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}
 
 # Button toggle callback for CIR visualization
 @callback(
