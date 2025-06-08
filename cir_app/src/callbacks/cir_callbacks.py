@@ -8,18 +8,12 @@ from PIL import Image
 from src import config
 import os
 import sys
-# Ensure the SEARLE demo directory is on the path for local imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'SEARLE'))
-from compose_image_retrieval_demo import ComposedImageRetrievalSystem
 from src.Dataset import Dataset
 import torch
 import torch.nn.functional as F
 import pickle
 import clip
-
-# Thread lock and CIR system instance
-lock = threading.Lock()
-cir_system = None
+from src.shared import cir_systems
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -87,25 +81,12 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
         tmp.write(decoded)
         tmp.close()
 
-        global cir_system
-        if cir_system is None:
-            with lock:
-                if cir_system is None:
-                    cir_system = ComposedImageRetrievalSystem(
-                        dataset_path=config.CIR_DATASET_PATH,
-                        dataset_type=config.CIR_DATASET_TYPE,
-                        clip_model_name=config.CIR_CLIP_MODEL_NAME,
-                        eval_type=config.CIR_EVAL_TYPE,
-                        preprocess_type=config.CIR_PREPROCESS_TYPE,
-                        exp_name=config.CIR_EXP_NAME,
-                        phi_checkpoint_name=config.CIR_PHI_CHECKPOINT_NAME,
-                        features_path=config.CIR_FEATURES_PATH,
-                        load_features=config.CIR_LOAD_FEATURES,
-                    )
-                    cir_system.create_database(split=config.CIR_SPLIT)
 
-        with lock:
-            results = cir_system.query(tmp.name, text_prompt, top_n)
+        with cir_systems.lock:
+            results = cir_systems.cir_system_searle.query(tmp.name, text_prompt, top_n)
+
+        with cir_systems.lock:
+            results_freedom = cir_systems.cir_system_freedom.query(tmp.name, text_prompt, top_n)
 
         # Build result cards using paths from the loaded dataset
         cards = []
@@ -153,26 +134,26 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
                     topk_ids.append(img_name)
         top1_id = topk_ids[0] if topk_ids else None
         # Compute query embedding and normalize
-        device_model = next(cir_system.clip_model.parameters()).device
+        device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
         query_img = Image.open(tmp.name).convert('RGB')
-        query_input = cir_system.preprocess(query_img).unsqueeze(0).to(device_model)
+        query_input = cir_systems.cir_system_searle.preprocess(query_img).unsqueeze(0).to(device_model)
         with torch.no_grad():
-            feat = cir_system.clip_model.encode_image(query_input)
+            feat = cir_systems.cir_system_searle.clip_model.encode_image(query_input)
             feat = F.normalize(feat.float(), dim=-1)
         feat_np = feat.cpu().numpy()
         
         # Compute the final composed query embedding (image + text) used for actual search
         with torch.no_grad():
-            if cir_system.eval_type in ['phi', 'searle', 'searle-xl']:
+            if cir_systems.cir_system_searle.eval_type in ['phi', 'searle', 'searle-xl']:
                 # Use phi network to generate pseudo tokens
-                pseudo_tokens = cir_system.phi(feat)
+                pseudo_tokens = cir_systems.cir_system_searle.phi(feat)
                 # Create text with pseudo token placeholder
                 input_caption = f"a photo of $ that {text_prompt}"
                 tokenized_caption = clip.tokenize([input_caption], context_length=77).to(device_model)
                 # Encode text with pseudo tokens - this is the final query embedding
                 from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
                 final_query_features = encode_with_pseudo_tokens(
-                    cir_system.clip_model, tokenized_caption, pseudo_tokens
+                    cir_systems.cir_system_searle.clip_model, tokenized_caption, pseudo_tokens
                 )
                 final_query_features = F.normalize(final_query_features)
             else:
