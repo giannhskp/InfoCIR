@@ -65,3 +65,4 @@ TOP_1_COLOR = 'red'
 
 CIR_FEATURES_PATH = WORK_DIR / 'features'  # Path to store CIR features
 CIR_LOAD_FEATURES = True  # Whether to load precomputed features or not
+CIR_FREEDOM_FEATURES_PATH = WORK_DIR / 'clip_features'  # Path for Freedom features

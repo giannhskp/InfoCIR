@@ -1,10 +1,20 @@
+import sys
 import os
+import threading
 import pandas as pd
 
 from pathlib import Path
 
 from src import config, feature_engineering
 from src.dataloaders import dataset_loader
+
+from src.shared import cir_systems
+
+sys.path.append(os.path.join(os.path.dirname(__file__), 'callbacks', 'SEARLE'))
+from compose_image_retrieval_demo import ComposedImageRetrievalSystem
+
+sys.path.append(os.path.join(os.path.dirname(__file__), 'callbacks', 'freedom'))
+from composed_image_retrieval_freedom import FreedomRetrievalSystem
 
 class Dataset:
     data = None
@@ -15,6 +25,29 @@ class Dataset:
         """Load the augmented dataset"""
         Dataset.data = pd.read_csv(config.AUGMENTED_DATASET_PATH, index_col='image_id')
         Dataset.count = Dataset.data['class_name'].value_counts()
+
+        # Initialize the CIR system
+        with cir_systems.lock:
+            if cir_systems.cir_system_searle is None:
+                cir_systems.cir_system_searle = ComposedImageRetrievalSystem(
+                    dataset_path=config.CIR_DATASET_PATH,
+                    dataset_type=config.CIR_DATASET_TYPE,
+                    clip_model_name=config.CIR_CLIP_MODEL_NAME,
+                    eval_type=config.CIR_EVAL_TYPE,
+                    preprocess_type=config.CIR_PREPROCESS_TYPE,
+                    exp_name=config.CIR_EXP_NAME,
+                    phi_checkpoint_name=config.CIR_PHI_CHECKPOINT_NAME,
+                    features_path=config.CIR_FEATURES_PATH,
+                    load_features=config.CIR_LOAD_FEATURES,
+                )
+                cir_systems.cir_system_searle.create_database(split=config.CIR_SPLIT)
+
+        with cir_systems.lock:
+            if cir_systems.cir_system_freedom is None:
+                cir_systems.cir_system_freedom = FreedomRetrievalSystem(
+                    load_features=config.CIR_LOAD_FEATURES, features_path=config.CIR_FREEDOM_FEATURES_PATH
+                )
+                cir_systems.cir_system_freedom.create_database(config.WORK_DIR)
         
         # Print dataset statistics
         print(f"\nDataset Statistics:")
@@ -36,7 +69,18 @@ class Dataset:
         """Check if processed/augmented dataset exists"""
         features_path = Path(config.CIR_FEATURES_PATH)
         umap_reducer_path = Path(config.WORK_DIR)
-        return os.path.isfile(config.AUGMENTED_DATASET_PATH) and os.path.isfile(features_path / "index_features.pt") and os.path.isfile(features_path / "index_names.pkl") and os.path.isfile(umap_reducer_path / "umap_reducer.pkl")
+        
+        freedom_save_dir = os.path.join(config.WORK_DIR, "clip_features")
+        freedom_corpus_file = os.path.join(freedom_save_dir, "corpus", "open_image_v7_class_names.pkl")
+        freedom_features_file = os.path.join(freedom_save_dir, "imagenet_r", "full_imagenet_r_features.pkl")
+        freedom_names_file = os.path.join(freedom_save_dir, "imagenet_r", "full_imagenet_r_names.pkl")
+
+        return (os.path.isfile(config.AUGMENTED_DATASET_PATH) and os.path.isfile(features_path / "index_features.pt")
+                and os.path.isfile(features_path / "index_names.pkl")
+                and os.path.isfile(umap_reducer_path / "umap_reducer.pkl")
+                and os.path.isfile(freedom_corpus_file)
+                and os.path.isfile(freedom_features_file)
+                and os.path.isfile(freedom_names_file))
     
     @staticmethod
     def source_files_exist():
