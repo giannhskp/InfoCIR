@@ -6,22 +6,20 @@ import plotly.graph_objects as go
 
 @callback(
     [Output('scatterplot', 'figure', allow_duplicate=True),
-     Output('cir-visualize-button', 'disabled', allow_duplicate=True),
-     Output('cir-hide-button', 'disabled', allow_duplicate=True),
      Output('selected-image-data', 'data', allow_duplicate=True),
      Output('selected-gallery-image-ids', 'data', allow_duplicate=True)],
     Input('projection-radio-buttons', 'value'),
-    [State('cir-hide-button', 'disabled'),
+    [State('cir-toggle-state', 'data'),
      State('cir-search-data', 'data')],
     prevent_initial_call=True,
 )
-def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search_data):
+def projection_radio_is_clicked(radio_button_value, cir_toggle_state, search_data):
     """Handle projection radio button clicks"""
     print('Projection radio button is clicked')
     new_scatterplot_fig = scatterplot.create_scatterplot_figure(radio_button_value)
     
     # If CIR is active and visible, re-add the visualization traces
-    if search_data and not hide_button_disabled:  # hide_button_disabled=False means CIR is visible
+    if search_data and cir_toggle_state:  # cir_toggle_state=True means CIR is visible
         df = Dataset.get()
         topk_ids = search_data.get('topk_ids', [])
         top1_id = search_data.get('top1_id', None)
@@ -69,12 +67,4 @@ def projection_radio_is_clicked(radio_button_value, hide_button_disabled, search
             new_scatterplot_fig.add_trace(trace_fq)
     
     # Clear selected image data and gallery highlighting when changing projections
-    # Preserve current CIR visualization state (don't reset button states)
-    if hide_button_disabled:
-        # CIR is currently hidden: visualize enabled, hide disabled
-        visualize_disabled, hide_disabled = False, True
-    else:
-        # CIR is currently visible: visualize disabled, hide enabled  
-        visualize_disabled, hide_disabled = True, False
-    
-    return new_scatterplot_fig, visualize_disabled, hide_disabled, None, [] 
+    return new_scatterplot_fig, None, [] 
