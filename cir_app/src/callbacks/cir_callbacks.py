@@ -957,6 +957,9 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     scatterplot_fig['layout']['images'] = []
     main = scatterplot_fig['data'][0]
     xs, ys, cds = main['x'], main['y'], main['customdata']
+    
+    # Reset main trace colors to remove any previous highlighting from selected images/classes
+    main['marker'] = {'color': config.SCATTERPLOT_COLOR}
     # Plot Top-K and Top-1
     x1,y1,xk,yk = [],[],[],[]
     cmp1 = int(top1_id) if top1_id is not None else None
@@ -983,6 +986,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     else: wc=[]
     # Gallery and Histogram
     cir_df = df.loc[topk_ids]
-    gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,selected_gallery_image_ids)
+    # Clear any previous gallery selections when switching to enhanced prompt results
+    gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,[])
     hist = histogram.draw_histogram(cir_df)
-    return gal, wc, hist, scatterplot_fig, None, selected_gallery_image_ids
+    return gal, wc, hist, scatterplot_fig, None, []
