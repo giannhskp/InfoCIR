@@ -441,22 +441,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     prompts = list(set(prompts))
     print(f"Final prompts list: {prompts}")
 
-    # Prepare ideal image embedding
-    df = Dataset.get()
-    try:
-        ideal_idx = int(selected_image_id)
-    except:
-        ideal_idx = selected_image_id
-    ideal_path = df.loc[ideal_idx]['image_path']
-    ideal_img = Image.open(ideal_path).convert('RGB')
-    device_model = next(cir_system.clip_model.parameters()).device
-    ideal_input = cir_system.preprocess(ideal_img).unsqueeze(0).to(device_model)
-    with torch.no_grad():
-        ideal_feat = cir_system.clip_model.encode_image(ideal_input)
-        ideal_feat = F.normalize(ideal_feat.float(), dim=-1).squeeze(0)
-
     # Score each candidate prompt and store full results
     sims = []
+    ranks = []  # List to store the rank (position) of the selected image
     all_prompt_results = []
     for p in prompts:
         # Use the same query method as full CIR to get full results
@@ -465,22 +452,24 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         
         # Find the similarity score for the ideal image in these results
         ideal_score = None
-        for name, score in full_prompt_results:
+        position = None
+        for idx, (name, score) in enumerate(full_prompt_results):
             if str(name) == str(selected_image_id):
                 ideal_score = score
+                position = idx + 1
                 break
-        
-        # If ideal image not found in top results, assign very low score
         if ideal_score is None:
             ideal_score = 0.0
-            print(f"Warning: Ideal image {selected_image_id} not found in top-{search_data['top_n']} for prompt: {p}")
-        
+        if position is None:
+            position = len(full_prompt_results) + 1  # beyond top-N
         sims.append(ideal_score)
+        ranks.append(position)
 
-    # Select best prompt by highest similarity
-    best_idx = sims.index(max(sims))
+    # Select best prompt by lowest rank (best position)
+    best_idx = min(range(len(prompts)), key=lambda i: ranks[i])
     best_prompt = prompts[best_idx]
     best_sim_score = sims[best_idx]
+    best_position = ranks[best_idx]
     print(f"Selected best prompt: '{best_prompt}' with score: {best_sim_score}")
 
     # Get results for best prompt (already computed)
@@ -509,12 +498,14 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         if i == best_idx:  # Highlight best prompt
             row = html.Tr([
                 html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
+                html.Td([html.Span(str(ranks[i]), className="badge bg-success")]),
                 html.Td([html.Span(f"{s:.4f}", className="badge bg-success")]),
                 html.Td(view_button)
             ], className="table-success")
         else:
             row = html.Tr([
                 html.Td(p),
+                html.Td(html.Span(str(ranks[i]), className="badge bg-secondary")),
                 html.Td(html.Span(f"{s:.4f}", className="badge bg-secondary")),
                 html.Td(view_button)
             ])
@@ -524,6 +515,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     candidates_table = dbc.Table([
         html.Thead(html.Tr([
             html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
+            html.Th([html.I(className="fas fa-hashtag me-2"), "Position"], className="bg-light"),
             html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light"),
             html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
         ]), className="thead-light"),
@@ -578,7 +570,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         dbc.Alert([
             html.H6([html.I(className="fas fa-trophy text-warning me-2"), "Selected Best Prompt"], className="alert-heading mb-2"),
             html.P(f'"{best_prompt}"', className="mb-1 font-monospace"),
-            html.Small(f"Similarity Score: {best_sim_score:.4f}", className="text-muted")
+            html.Small(f"Position: {best_position} | Similarity Score: {best_sim_score:.4f}", className="text-muted")
         ], color="light", className="border-start border-warning border-4"),
         
         # Results section
@@ -592,6 +584,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     enhanced_prompts_data = {
         'prompts': prompts,
         'similarities': sims,
+        'positions': ranks,
         'all_results': all_prompt_results,
         'best_idx': best_idx,
         'currently_viewing': best_idx  # Default to showing best prompt results
@@ -630,11 +623,13 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     # Get data for the clicked prompt
     prompts = enhanced_data['prompts']
     similarities = enhanced_data['similarities']
+    positions = enhanced_data['positions']
     all_results = enhanced_data['all_results']
     best_idx = enhanced_data['best_idx']
     
     clicked_prompt = prompts[clicked_index]
     clicked_similarity = similarities[clicked_index]
+    clicked_position = positions[clicked_index]
     clicked_results = all_results[clicked_index]
     
     # Build image cards for the clicked prompt results
@@ -692,12 +687,14 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
         if i == best_idx:  # Highlight best prompt row
             row = html.Tr([
                 html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
+                html.Td([html.Span(str(positions[i]), className="badge bg-success")]),
                 html.Td([html.Span(f"{s:.4f}", className="badge bg-success")]),
                 html.Td(view_button)
             ], className="table-success")
         else:
             row = html.Tr([
                 html.Td(p),
+                html.Td(html.Span(str(positions[i]), className="badge bg-secondary")),
                 html.Td(html.Span(f"{s:.4f}", className="badge bg-secondary")),
                 html.Td(view_button)
             ])
@@ -707,6 +704,7 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     candidates_table = dbc.Table([
         html.Thead(html.Tr([
             html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
+            html.Th([html.I(className="fas fa-hashtag me-2"), "Position"], className="bg-light"),
             html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light"),
             html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
         ]), className="thead-light"),
@@ -734,7 +732,7 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
                 "Currently Viewing" if clicked_index != best_idx else "Selected Best Prompt"
             ], className="alert-heading mb-2"),
             html.P(f'"{clicked_prompt}"', className="mb-1 font-monospace"),
-            html.Small(f"Similarity Score: {clicked_similarity:.4f}", className="text-muted")
+            html.Small(f"Position: {clicked_position} | Similarity Score: {clicked_similarity:.4f}", className="text-muted")
         ], color="light" if clicked_index != best_idx else "light", 
            className="border-start border-info border-4" if clicked_index != best_idx else "border-start border-warning border-4"),
         
@@ -761,6 +759,7 @@ def populate_prompt_enhancement_tab(enhanced_data):
         raise PreventUpdate
     prompts = enhanced_data.get('prompts', [])
     sims = enhanced_data.get('similarities', [])
+    positions = enhanced_data.get('positions', [])
     best_idx = enhanced_data.get('best_idx')
     
     # Create styled cards for each enhanced prompt
@@ -780,6 +779,9 @@ def populate_prompt_enhancement_tab(enhanced_data):
                         html.H6(title_text, className=title_class),
                         html.P(f'"{prompt}"', className="font-monospace text-dark mb-1", style={'fontSize': '0.9em'}),
                         html.Small([
+                            html.Span("Position: ", className="text-muted"),
+                            html.Span(str(positions[i]), className="badge bg-secondary ms-1"),
+                            html.Br(),
                             html.Span("Similarity Score: ", className="text-muted"),
                             html.Span(f"{sim:.4f}", className="badge bg-secondary ms-1")
                         ])
@@ -835,6 +837,7 @@ def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data):
         new_selected = clicked_index
     
     prompts = enhanced_data.get('prompts', [])
+    positions = enhanced_data.get('positions', [])
     best_idx = enhanced_data.get('best_idx')
     card_styles = []
     # Enhanced prompt cards styling
@@ -864,6 +867,7 @@ def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data):
         raise PreventUpdate
     
     prompts = enhanced_data.get('prompts', [])
+    positions = enhanced_data.get('positions', [])
     best_idx = enhanced_data.get('best_idx')
     card_styles = []
     

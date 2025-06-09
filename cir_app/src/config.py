@@ -23,7 +23,7 @@ DEFAULT_PROJECTION = 'UMAP'
 PORT = 8051  # Port number for the Dash application
 
 # Dataset configuration
-DATASET_SAMPLE_SIZE = 1000  # Sample size from dataset
+DATASET_SAMPLE_SIZE = 30000  # Sample size from dataset
 
 # Path configuration
 # You should set DATASET_ROOT_PATH to point to your actual dataset directory
