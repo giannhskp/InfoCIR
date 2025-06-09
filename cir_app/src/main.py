@@ -174,7 +174,9 @@ def run_ui():
             # Store for selected gallery image IDs (for highlighting in images tab)
             dcc.Store(id='selected-gallery-image-ids', data=[]),
             # Store for the selected CIR result image ID to support prompt enhancement
-            dcc.Store(id='cir-selected-image-id', data=None)
+            dcc.Store(id='cir-selected-image-id', data=None),
+            # Store for enhanced prompts data and results
+            dcc.Store(id='cir-enhanced-prompts-data', data=None)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )

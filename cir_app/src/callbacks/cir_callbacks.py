@@ -74,7 +74,8 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-search-data', 'data'),
      Output('cir-toggle-button', 'style', allow_duplicate=True),
      Output('cir-run-button', 'style'),
-     Output('cir-enhance-results', 'children', allow_duplicate=True)],
+     Output('cir-enhance-results', 'children', allow_duplicate=True),
+     Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True)],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
     prevent_initial_call=True
@@ -83,8 +84,8 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
-        # Show Run CIR button, hide visualize button, clear enhance results
-        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, []
+        # Show Run CIR button, hide visualize button, clear enhance results and data
+        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None
     try:
         # Decode and save query image
         _, content_string = upload_contents.split(',')
@@ -233,12 +234,12 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             'text_prompt': text_prompt,
             'top_n': top_n
         }
-        # Show visualize button, hide Run CIR
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, []
+        # Show visualize button, hide Run CIR, clear enhance data
+        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None
     except Exception as e:
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        # On error, hide visualize button, show Run CIR, clear enhance results
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, []
+        # On error, hide visualize button, show Run CIR, clear enhance results and data
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None
 
 # Button toggle callback for CIR visualization
 @callback(
@@ -334,7 +335,8 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames):
 # New callback to enhance the user prompt and evaluate against the selected image
 @callback(
     [Output('cir-search-status', 'children', allow_duplicate=True),
-     Output('cir-enhance-results', 'children', allow_duplicate=True)],
+     Output('cir-enhance-results', 'children', allow_duplicate=True),
+     Output('cir-enhanced-prompts-data', 'data')],
     Input('enhance-prompt-button', 'n_clicks'),
     [State('cir-search-data', 'data'), State('cir-selected-image-id', 'data')],
     prevent_initial_call=True
@@ -439,16 +441,17 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         ideal_feat = cir_system.clip_model.encode_image(ideal_input)
         ideal_feat = F.normalize(ideal_feat.float(), dim=-1).squeeze(0)
 
-    # Score each candidate prompt
+    # Score each candidate prompt and store full results
     sims = []
+    all_prompt_results = []
     for p in prompts:
-        # Use the same query method as full CIR to ensure consistency
-        # Run a single-result query to get the similarity score for the ideal image
-        temp_results = cir_system.query(tmp.name, p, search_data['top_n'])
+        # Use the same query method as full CIR to get full results
+        full_prompt_results = cir_system.query(tmp.name, p, search_data['top_n'])
+        all_prompt_results.append(full_prompt_results)
         
         # Find the similarity score for the ideal image in these results
         ideal_score = None
-        for name, score in temp_results:
+        for name, score in full_prompt_results:
             if str(name) == str(selected_image_id):
                 ideal_score = score
                 break
@@ -466,17 +469,8 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     best_sim_score = sims[best_idx]
     print(f"Selected best prompt: '{best_prompt}' with score: {best_sim_score}")
 
-    # Rerun CIR with best prompt
-    full_results = cir_system.query(tmp.name, best_prompt, search_data['top_n'])
-    # Find ideal image position
-    position = next((i+1 for i,(name,_) in enumerate(full_results) if str(name)==str(selected_image_id)), None)
-    
-    # Get the actual score from full CIR results for verification
-    ideal_score_in_results = None
-    for name, score in full_results:
-        if str(name) == str(selected_image_id):
-            ideal_score_in_results = score
-            break
+    # Get results for best prompt (already computed)
+    full_results = all_prompt_results[best_idx]
     
     # Clean up temporary file
     os.unlink(tmp.name)
@@ -487,26 +481,37 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         "Enhanced prompt generated successfully! See analysis below."
     ], className="text-success small mb-3")
 
-    # Create enhanced table rows with highlighting for best prompt
+    # Create enhanced table rows with highlighting for best prompt and action buttons
     table_rows = []
     for i, (p, s) in enumerate(zip(prompts, sims)):
+        view_button = dbc.Button(
+            [html.I(className="fas fa-eye me-1"), "View"],
+            id={'type': 'enhanced-prompt-view', 'index': i},
+            size="sm",
+            color="outline-primary" if i != best_idx else "primary",
+            className="btn-sm"
+        )
+        
         if i == best_idx:  # Highlight best prompt
             row = html.Tr([
                 html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
                 html.Td([html.Span(f"{s:.4f}", className="badge bg-success")]),
+                html.Td(view_button)
             ], className="table-success")
         else:
             row = html.Tr([
                 html.Td(p),
                 html.Td(html.Span(f"{s:.4f}", className="badge bg-secondary")),
+                html.Td(view_button)
             ])
         table_rows.append(row)
 
-    # Enhanced candidates table with better styling
+    # Enhanced candidates table with better styling and action column
     candidates_table = dbc.Table([
         html.Thead(html.Tr([
             html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
-            html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light")
+            html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light"),
+            html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
         ]), className="thead-light"),
         html.Tbody(table_rows)
     ], bordered=True, hover=True, responsive=True, className="mb-4 shadow-sm")
@@ -569,4 +574,161 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         ])
     ]
 
-    return status, enhance_children
+    # Store data for enhanced prompts
+    enhanced_prompts_data = {
+        'prompts': prompts,
+        'similarities': sims,
+        'all_results': all_prompt_results,
+        'best_idx': best_idx,
+        'currently_viewing': best_idx  # Default to showing best prompt results
+    }
+    
+    return status, enhance_children, enhanced_prompts_data
+
+# New callback to handle enhanced prompt view button clicks
+@callback(
+    [Output('cir-enhance-results', 'children', allow_duplicate=True),
+     Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True)],
+    [Input({'type': 'enhanced-prompt-view', 'index': ALL}, 'n_clicks')],
+    [State('cir-enhanced-prompts-data', 'data')],
+    prevent_initial_call=True
+)
+def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
+    """Update the enhanced prompt results display when a view button is clicked"""
+    if not enhanced_data or not any(n_clicks_list):
+        raise PreventUpdate
+    
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    
+    # Get the clicked button index
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    try:
+        clicked_dict = json.loads(triggered_id)
+        clicked_index = clicked_dict.get('index')
+    except Exception:
+        raise PreventUpdate
+    
+    # Update the currently viewing index
+    enhanced_data['currently_viewing'] = clicked_index
+    
+    # Get data for the clicked prompt
+    prompts = enhanced_data['prompts']
+    similarities = enhanced_data['similarities']
+    all_results = enhanced_data['all_results']
+    best_idx = enhanced_data['best_idx']
+    
+    clicked_prompt = prompts[clicked_index]
+    clicked_similarity = similarities[clicked_index]
+    clicked_results = all_results[clicked_index]
+    
+    # Build image cards for the clicked prompt results
+    df = Dataset.get()
+    cards = []
+    for img_name, score in clicked_results:
+        img_path = None
+        try:
+            idx = int(img_name)
+            if idx in df.index:
+                img_path = df.loc[idx]['image_path']
+        except:
+            if img_name in df.index:
+                img_path = df.loc[img_name]['image_path']
+        if not img_path or not os.path.exists(img_path):
+            continue
+        data = open(img_path, "rb").read()
+        src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
+        # Create card body with score (like original CIR)
+        card_body = dbc.CardBody([
+            html.Img(src=src, className='img-fluid', style={'maxHeight':'150px','width':'auto'}),
+            html.P(f"Score: {score:.4f}", className='small text-center mt-1')
+        ])
+        card = dbc.Card(card_body, className='result-card', style={'cursor': 'default'})
+        cards.append(dbc.Col(card, width=2))
+
+    # Arrange cards into rows of up to 6
+    rows = []
+    for i in range(0, len(cards), 6):
+        rows.append(dbc.Row(cards[i:i+6], className="g-2 mb-3"))
+    images_grid = html.Div(rows)
+
+    # Create enhanced table rows with updated button states
+    table_rows = []
+    for i, (p, s) in enumerate(zip(prompts, similarities)):
+        # Highlight the currently viewing button
+        if i == clicked_index:
+            button_color = "primary"
+            button_text = [html.I(className="fas fa-eye me-1"), "Viewing"]
+        elif i == best_idx:
+            button_color = "outline-success"
+            button_text = [html.I(className="fas fa-crown me-1"), "Best"]
+        else:
+            button_color = "outline-primary"
+            button_text = [html.I(className="fas fa-eye me-1"), "View"]
+            
+        view_button = dbc.Button(
+            button_text,
+            id={'type': 'enhanced-prompt-view', 'index': i},
+            size="sm",
+            color=button_color,
+            className="btn-sm"
+        )
+        
+        if i == best_idx:  # Highlight best prompt row
+            row = html.Tr([
+                html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
+                html.Td([html.Span(f"{s:.4f}", className="badge bg-success")]),
+                html.Td(view_button)
+            ], className="table-success")
+        else:
+            row = html.Tr([
+                html.Td(p),
+                html.Td(html.Span(f"{s:.4f}", className="badge bg-secondary")),
+                html.Td(view_button)
+            ])
+        table_rows.append(row)
+
+    # Enhanced candidates table with updated buttons
+    candidates_table = dbc.Table([
+        html.Thead(html.Tr([
+            html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
+            html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light"),
+            html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
+        ]), className="thead-light"),
+        html.Tbody(table_rows)
+    ], bordered=True, hover=True, responsive=True, className="mb-4 shadow-sm")
+
+    # Build enhance results children with updated content
+    enhance_children = [
+        # Main title with icon
+        html.Div([
+            html.I(className="fas fa-brain text-primary me-2"),
+            html.H5("Enhanced Prompt Analysis", className="d-inline text-primary")
+        ], className="mt-3 mb-4"),
+        
+        # Candidates section
+        html.Div([
+            html.H6([html.I(className="fas fa-list-alt me-2"), "Candidate Prompts & Scores"], className="mb-3 text-secondary"),
+            candidates_table
+        ]),
+        
+        # Current viewing prompt highlight card
+        dbc.Alert([
+            html.H6([
+                html.I(className="fas fa-trophy text-warning me-2") if clicked_index == best_idx else html.I(className="fas fa-eye text-info me-2"),
+                "Currently Viewing" if clicked_index != best_idx else "Selected Best Prompt"
+            ], className="alert-heading mb-2"),
+            html.P(f'"{clicked_prompt}"', className="mb-1 font-monospace"),
+            html.Small(f"Similarity Score: {clicked_similarity:.4f}", className="text-muted")
+        ], color="light" if clicked_index != best_idx else "light", 
+           className="border-start border-info border-4" if clicked_index != best_idx else "border-start border-warning border-4"),
+        
+        # Results section
+        html.Div([
+            html.H6([html.I(className="fas fa-images me-2"), f"CIR Results for {'Best ' if clicked_index == best_idx else ''}Prompt"], className="mt-4 mb-3 text-secondary"),
+            images_grid
+        ])
+    ]
+    
+    return enhance_children, enhanced_data
