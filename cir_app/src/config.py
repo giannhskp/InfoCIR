@@ -11,6 +11,10 @@ WORDCLOUD_IMAGE_WIDTH = 800
 SCATTERPLOT_COLOR = 'rgba(31, 119, 180, 0.5)'
 SCATTERPLOT_SELECTED_COLOR = 'red'
 
+# Colors for selected image and neighbors in scatterplot
+SELECTED_IMAGE_COLOR = 'green'  # Color for the specifically selected image
+SELECTED_CLASS_COLOR = 'red'    # Color for other images of the same class as selected image
+
 MAX_IMAGES_ON_SCATTERPLOT = 100
 
 DEFAULT_PROJECTION = 'UMAP'

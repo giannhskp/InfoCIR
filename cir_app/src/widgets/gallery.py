@@ -2,15 +2,28 @@ import dash_bootstrap_components as dbc
 from dash import html
 from src import config
 from src.utils import encode_image
+import numpy as np
 
 def create_gallery():
     """Create gallery component"""
     return html.Div([], id='gallery', className='stretchy-widget border-widget gallery')
 
-def create_gallery_children(image_paths, class_names):
-    """Create gallery children components from image paths and class names"""
+def create_gallery_children(image_paths, class_names, image_ids=None, selected_image_ids=None):
+    """Create gallery children components from image paths, class names, and optionally image IDs
+    
+    Args:
+        image_paths: List of image file paths
+        class_names: List of class names for each image
+        image_ids: Optional list of image IDs
+        selected_image_ids: List of currently selected image identifiers (for highlighting)
+    """
     image_rows = []
     image_id = 0
+    
+    # Initialize selected identifiers set for fast lookup
+    selected_identifiers = set()
+    if selected_image_ids:
+        selected_identifiers = set(selected_image_ids)
     
     for i in range(0, len(image_paths), config.IMAGE_GALLERY_ROW_SIZE):
         image_cols = []
@@ -23,12 +36,43 @@ def create_gallery_children(image_paths, class_names):
                     image = f.read()
                 class_name = class_names[i + j]
                 
+                # Use provided image_id if available, otherwise use class_name for backwards compatibility
+                if image_ids is not None and i + j < len(image_ids):
+                    # Convert numpy types to regular Python types for Dash compatibility
+                    img_id = image_ids[i + j]
+                    if hasattr(img_id, 'item'):  # numpy scalar
+                        img_id = img_id.item()
+                    elif isinstance(img_id, np.integer):  # numpy integer types
+                        img_id = int(img_id)
+                    # Use string format that encodes both class name and image ID
+                    identifier = f"image_{img_id}_{class_name}"
+                else:
+                    # Backwards compatibility: just use class name
+                    identifier = f"class_{class_name}"
+                
+                # Determine if this image is selected
+                is_selected = identifier in selected_identifiers
+                
+                # Apply different styling based on selection state
+                if is_selected:
+                    card_style = {
+                        'backgroundColor': '#d4edda',  # Light green background
+                        'border': '2px solid #28a745',  # Green border
+                        'borderRadius': '8px',
+                        'boxShadow': '0 4px 8px rgba(40, 167, 69, 0.3)'  # Green shadow
+                    }
+                    card_class = 'gallery-card selected-gallery-card'
+                else:
+                    card_style = {}
+                    card_class = 'gallery-card'
+                
                 html_card = html.A([
                         html.Img(src=encode_image(image), className='gallery-image'),
                         html.Div(class_name, className='gallery-text')
                     ], 
-                    id={'type': 'gallery-card', 'index': class_name}, 
-                    className='gallery-card'
+                    id={'type': 'gallery-card', 'index': identifier}, 
+                    className=card_class,
+                    style=card_style
                 )
                 image_cols.append(dbc.Col(html_card, className='gallery-col', width=3))
                 image_id += 1

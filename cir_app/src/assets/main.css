@@ -96,6 +96,35 @@
 
 .gallery-card {
     cursor:pointer;
+    transition: all 0.3s ease-in-out !important;
+    position: relative; /* For z-index to work */
+}
+
+.gallery-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+.selected-gallery-card {
+    transition: all 0.4s ease-in-out !important;
+    animation: pulseSelection 0.8s ease-in-out !important;
+}
+
+/* Ensure that selected cards override hover effects */
+.selected-gallery-card:hover {
+    transform: scale(1.08) !important;
+}
+
+@keyframes pulseSelection {
+    0% {
+        box-shadow: 0 8px 25px rgba(32, 201, 151, 0.6), 0 0 0 0 rgba(32, 201, 151, 0.8);
+    }
+    50% {
+        box-shadow: 0 8px 25px rgba(32, 201, 151, 0.6), 0 0 0 15px rgba(32, 201, 151, 0.2);
+    }
+    100% {
+        box-shadow: 0 8px 25px rgba(32, 201, 151, 0.6), 0 0 0 3px rgba(32, 201, 151, 0.3);
+    }
 }
 
 .gallery-col {

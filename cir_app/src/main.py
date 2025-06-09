@@ -146,7 +146,11 @@ def run_ui():
                 dbc.Col(cir_interface, width=12)
             ], className='mt-4'),
             # Store for CIR search raw data
-            dcc.Store(id='cir-search-data', data=None)
+            dcc.Store(id='cir-search-data', data=None),
+            # Store for selected image info in CIR mode
+            dcc.Store(id='selected-image-data', data=None),
+            # Store for selected gallery image IDs (for highlighting in images tab)
+            dcc.Store(id='selected-gallery-image-ids', data=[])
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )
