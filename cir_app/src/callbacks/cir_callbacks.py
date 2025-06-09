@@ -387,11 +387,10 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         do_sample=True,
         temperature=0.8,
         top_p=0.9,
-        num_return_sequences=N
+        num_return_sequences=N,
     )
     results = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-    print(results)
-    # Extract the enhanced prompt from model output
+
     # Extract enhanced prompts from between <ANSWER> tags (case-insensitive)
     prompts = []
     for i, result in enumerate(results):
@@ -403,7 +402,6 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
             continue
         
         response_part = result[inst_idx + 7:]  # Skip '[/INST]'
-        print(f"Response part: '{response_part}'")
         
         # Now look for ANSWER tags in the response part only
         start_tag = '<ANSWER>'
@@ -439,43 +437,52 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         ideal_feat = cir_system.clip_model.encode_image(ideal_input)
         ideal_feat = F.normalize(ideal_feat.float(), dim=-1).squeeze(0)
 
-    print(prompts)
     # Score each candidate prompt
     sims = []
     for p in prompts:
-        # Encode composed query
-        query_img = Image.open(tmp.name).convert('RGB')
-        q_input = cir_system.preprocess(query_img).unsqueeze(0).to(device_model)
-        with torch.no_grad():
-            img_feat = cir_system.clip_model.encode_image(q_input)
-            img_feat = F.normalize(img_feat.float(), dim=-1)
-            if cir_system.eval_type in ['phi','searle','searle-xl']:
-                pseudo = cir_system.phi(img_feat)
-                cap = f"a photo of $ that {p}"
-                tokenized = clip.tokenize([cap], context_length=77).to(device_model)
-                from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
-                qf = encode_with_pseudo_tokens(cir_system.clip_model, tokenized, pseudo)
-                qf = F.normalize(qf)
-            else:
-                qf = img_feat
-        sims.append(float((qf @ ideal_feat).item()))
+        # Use the same query method as full CIR to ensure consistency
+        # Run a single-result query to get the similarity score for the ideal image
+        temp_results = cir_system.query(tmp.name, p, search_data['top_n'])
+        
+        # Find the similarity score for the ideal image in these results
+        ideal_score = None
+        for name, score in temp_results:
+            if str(name) == str(selected_image_id):
+                ideal_score = score
+                break
+        
+        # If ideal image not found in top results, assign very low score
+        if ideal_score is None:
+            ideal_score = 0.0
+            print(f"Warning: Ideal image {selected_image_id} not found in top-{search_data['top_n']} for prompt: {p}")
+        
+        sims.append(ideal_score)
 
     # Select best prompt by highest similarity
     best_idx = sims.index(max(sims))
     best_prompt = prompts[best_idx]
+    best_sim_score = sims[best_idx]
+    print(f"Selected best prompt: '{best_prompt}' with score: {best_sim_score}")
 
     # Rerun CIR with best prompt
     full_results = cir_system.query(tmp.name, best_prompt, search_data['top_n'])
     # Find ideal image position
     position = next((i+1 for i,(name,_) in enumerate(full_results) if str(name)==str(selected_image_id)), None)
-
+    
+    # Get the actual score from full CIR results for verification
+    ideal_score_in_results = None
+    for name, score in full_results:
+        if str(name) == str(selected_image_id):
+            ideal_score_in_results = score
+            break
+    
     # Clean up temporary file
     os.unlink(tmp.name)
 
     # Build display
     lines = []
     lines.append(html.B("Generated prompts and similarity scores:"))
-    lines.append(html.Ul([html.Li(f"{i+1}. {p} – {s:.4f}") for i,(p,s) in enumerate(zip(prompts,sims))]))
+    lines.append(html.Ul([html.Li(f"{i+1}. {p} - {s:.4f}") for i,(p,s) in enumerate(zip(prompts,sims))]))
     lines.append(html.P(f"Best prompt: {best_prompt}"))
     lines.append(html.B("CIR results for best prompt:"))
     lines.append(html.Ul([html.Li(f"{i+1}. {name} (score: {score:.4f})") for i,(name,score) in enumerate(full_results)]))
