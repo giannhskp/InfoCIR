@@ -110,11 +110,6 @@ def run_ui():
             html.Div(id='cir-query-preview', className="mb-3 query-preview"),
             # Results section
             html.Hr(),
-            # Visualization control buttons (initially hidden)
-            html.Div([
-                dbc.Button("Visualize", id="cir-visualize-button", color="primary", className="me-2", n_clicks=0, disabled=False),
-                dbc.Button("Hide", id="cir-hide-button", color="secondary", className="me-2", n_clicks=0, disabled=True)
-            ], id="cir-vis-buttons", style={'display': 'none'}, className="mb-3"),
             html.Div(id='cir-results', children=[
                 html.H5("Retrieved Images", className="mb-3"),
                 html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", 
@@ -129,24 +124,43 @@ def run_ui():
             help_popup_widget,
             dbc.Stack([
                 projection_radio_buttons_widget,
-                dbc.Button('Deselect everything', 
-                          id='deselect-button', 
-                          class_name="btn btn-outline-primary ms-auto header-button"),
-                dbc.Button('Help', 
-                          id='help-button', 
-                          class_name="btn btn-outline-primary header-button")
+                html.Div([
+                    html.A(
+                        dbc.Button('Run CIR', 
+                                   id='cir-run-button',
+                                   color='info',
+                                   class_name='header-button',
+                                   style={'display': 'block', 'color': 'black'}),
+                        href='#cir-interface',
+                        style={'textDecoration': 'none'}
+                    ),
+                    dbc.Button('Visualize CIR results', 
+                               id='cir-toggle-button',
+                               color="success",
+                               class_name="header-button",
+                               style={'display': 'none', 'color': 'black'}),
+                    dbc.Button('Deselect everything', 
+                               id='deselect-button', 
+                               class_name="btn btn-outline-primary header-button"),
+                    dbc.Button('Help', 
+                               id='help-button', 
+                               class_name="btn btn-outline-primary header-button")
+                ], className='ms-auto d-flex gap-2 align-items-center'),
             ], id='header', direction="horizontal"),
             dbc.Row([
                 dbc.Col(scatterplot_widget, width=6, className='main-col'),
                 dbc.Col(right_tab, width=6, className='main-col')
             ], className='h-100', justify='between'),
-            # ], className='mt-4', justify='between'),
-            # CIR Interface
-            dbc.Row([
-                dbc.Col(cir_interface, width=12)
-            ], className='mt-4'),
+            # CIR Interface anchor for scrolling
+            html.Div(id='cir-interface', children=[
+                dbc.Row([
+                    dbc.Col(cir_interface, width=12)
+                ], className='mt-4')
+            ]),
             # Store for CIR search raw data
             dcc.Store(id='cir-search-data', data=None),
+            # Store for CIR toggle state (True = visualized, False = hidden)
+            dcc.Store(id='cir-toggle-state', data=False),
             # Store for selected image info in CIR mode
             dcc.Store(id='selected-image-data', data=None),
             # Store for selected gallery image IDs (for highlighting in images tab)
