@@ -127,15 +127,28 @@ def run_ui():
     app.layout = html.Div(
         dbc.Container([
             help_popup_widget,
+            html.Div(id='model-change-flag', style={'display': 'none'}),
             dbc.Stack([
                 projection_radio_buttons_widget,
-                dbc.Button('Deselect everything', 
-                          id='deselect-button', 
-                          class_name="btn btn-outline-primary ms-auto header-button"),
-                dbc.Button('Help', 
-                          id='help-button', 
-                          class_name="btn btn-outline-primary header-button")
-            ], id='header', direction="horizontal"),
+                html.Div([
+                    dbc.Select(
+                        id='custom-dropdown',
+                        options=[
+                            {"label": "SEARLE", "value": "SEARLE"},
+                            {"label": "freedom", "value": "freedom"}
+                        ],
+                        value="SEARLE",
+                        style={"width": "150px"},
+                        class_name="me-2"
+                    ),
+                    dbc.Button('Deselect everything', 
+                            id='deselect-button', 
+                            class_name="btn btn-outline-primary me-2 header-button"),
+                    dbc.Button('Help', 
+                            id='help-button', 
+                            class_name="btn btn-outline-primary header-button")
+                ], className="ms-auto d-flex align-items-center")
+            ], id='header', direction="horizontal", class_name="mb-3"),
             dbc.Row([
                 dbc.Col(scatterplot_widget, width=6, className='main-col'),
                 dbc.Col(right_tab, width=6, className='main-col')
