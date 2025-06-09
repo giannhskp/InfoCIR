@@ -33,14 +33,6 @@ class ImageDomainLabels(Dataset):
         self.domains = []
         self.image_ids = []
 
-        # --- Map image_ids using relative paths from .txt ---
-        self.image_ids = []
-        for rel_path in self.images:
-            if rel_path not in self.path_to_id:
-                print(f"Image path not found in CSV mapping: {rel_path}")
-                continue
-            self.image_ids.append(self.path_to_id[rel_path])
-
         for name in filenames:
             img_path_raw = name.split(" ")[0]
             label = name.split(" ")[2]
