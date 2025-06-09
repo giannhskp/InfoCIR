@@ -942,11 +942,15 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
             final_feat = F.normalize(final_feat)
         else:
             final_feat = feat
-        umap_path = config.WORK_DIR / 'umap_reducer.pkl'
-        umap_reducer = pickle.load(open(str(umap_path),'rb'))
-        fnp = final_feat.detach().cpu().numpy()
-        fur = umap_reducer.transform(fnp)
-        xfq, yfq = float(fur[0][0]), float(fur[0][1])
+        # Only compute Final Query coordinates for UMAP projection
+        if axis_title == 'umap_x':
+            umap_path = config.WORK_DIR / 'umap_reducer.pkl'
+            umap_reducer = pickle.load(open(str(umap_path),'rb'))
+            fnp = final_feat.detach().cpu().numpy()
+            fur = umap_reducer.transform(fnp)
+            xfq, yfq = float(fur[0][0]), float(fur[0][1])
+        else:
+            xfq, yfq = None, None  # Final query only shown for UMAP
         os.unlink(tmp.name)
     # Reset CIR traces
     scatterplot_fig['data'] = scatterplot_fig['data'][:3]
