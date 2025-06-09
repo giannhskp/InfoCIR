@@ -392,18 +392,22 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         **inputs,
         max_new_tokens=64,
         do_sample=True,
-        temperature=0.8,
-        top_p=0.9,
+        temperature=1.2,
+        top_p=0.8,
+        top_k=50,
+        repetition_penalty=1.1,
         num_return_sequences=N,
     )
     results = tokenizer.batch_decode(outputs, skip_special_tokens=True)
+    
+    print(f"Enhancement results: {len(results)}")
 
     # Extract enhanced prompts from between <ANSWER> tags (case-insensitive)
     prompts = []
     for i, result in enumerate(results):
-        
+        result = result.lower()
         # First extract only the response part after [/INST]
-        inst_idx = result.find('[/INST]')
+        inst_idx = result.find('[/inst]')
         if inst_idx == -1:
             print(f"No [/INST] found in result {i+1}")
             continue
@@ -411,8 +415,8 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         response_part = result[inst_idx + 7:]  # Skip '[/INST]'
         
         # Now look for ANSWER tags in the response part only
-        start_tag = '<ANSWER>'
-        end_tag = '</ANSWER>'
+        start_tag = '<answer>'
+        end_tag = '</answer>'
         start_idx = response_part.find(start_tag)
         end_idx = response_part.find(end_tag)
         
@@ -428,6 +432,13 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         print("No prompts extracted, using original as fallback")
         prompts = [original_prompt]
     
+    # clean up prompts
+    prompts = [p.strip() for p in prompts]
+    prompts = [p for p in prompts if p]
+    # remove '"' from prompts
+    prompts = [p.replace('"', '') for p in prompts]
+    # Remove duplicates
+    prompts = list(set(prompts))
     print(f"Final prompts list: {prompts}")
 
     # Prepare ideal image embedding
