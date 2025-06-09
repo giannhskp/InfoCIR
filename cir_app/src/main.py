@@ -111,6 +111,17 @@ def run_ui():
                         ],
                         value=10,
                         className="mb-3"
+                    ),
+                    html.Label("Model:", className="form-label fw-bold"),
+                    dbc.Select(
+                        id='custom-dropdown',
+                        options=[
+                            {"label": "SEARLE", "value": "SEARLE"},
+                            {"label": "freedom", "value": "freedom"}
+                        ],
+                        value="SEARLE",
+                        style={"width": "100%"},
+                        className="mb-3"
                     )
                 ], width=4),
                 dbc.Col([
@@ -163,16 +174,6 @@ def run_ui():
                                    style={'display': 'block', 'color': 'black'}),
                         href='#cir-interface',
                         style={'textDecoration': 'none'}
-                    ),
-                    dbc.Select(
-                        id='custom-dropdown',
-                        options=[
-                            {"label": "SEARLE", "value": "SEARLE"},
-                            {"label": "freedom", "value": "freedom"}
-                        ],
-                        value="SEARLE",
-                        style={"width": "150px"},
-                        class_name="me-2"
                     ),
                     dbc.Button('Visualize CIR results', 
                                id='cir-toggle-button',
