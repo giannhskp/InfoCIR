@@ -481,15 +481,35 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     # Clean up temporary file
     os.unlink(tmp.name)
 
-    # Status message
-    status = html.Div("Enhanced prompt generated. See details below.", className="text-info small mb-3")
+    # Status message with icon
+    status = html.Div([
+        html.I(className="fas fa-magic text-success me-2"),
+        "Enhanced prompt generated successfully! See analysis below."
+    ], className="text-success small mb-3")
 
-    # Candidate prompts table
-    candidates_table = dbc.Table(
-        [html.Thead(html.Tr([html.Th("Prompt"), html.Th("Similarity")])),
-         html.Tbody([html.Tr([html.Td(p), html.Td(f"{s:.4f}")]) for p, s in zip(prompts, sims)])],
-        bordered=True, striped=True, hover=True, size="sm", responsive=True, className="mb-4"
-    )
+    # Create enhanced table rows with highlighting for best prompt
+    table_rows = []
+    for i, (p, s) in enumerate(zip(prompts, sims)):
+        if i == best_idx:  # Highlight best prompt
+            row = html.Tr([
+                html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
+                html.Td([html.Span(f"{s:.4f}", className="badge bg-success")]),
+            ], className="table-success")
+        else:
+            row = html.Tr([
+                html.Td(p),
+                html.Td(html.Span(f"{s:.4f}", className="badge bg-secondary")),
+            ])
+        table_rows.append(row)
+
+    # Enhanced candidates table with better styling
+    candidates_table = dbc.Table([
+        html.Thead(html.Tr([
+            html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
+            html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light")
+        ]), className="thead-light"),
+        html.Tbody(table_rows)
+    ], bordered=True, hover=True, responsive=True, className="mb-4 shadow-sm")
 
     # Build image cards for CIR results of best prompt
     df = Dataset.get()
@@ -521,14 +541,32 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         rows.append(dbc.Row(cards[i:i+6], className="g-2 mb-3"))
     images_grid = html.Div(rows)
 
-    # Build enhance results children
+    # Build enhance results children with improved styling
     enhance_children = [
-        html.H5("Enhanced Prompt Analysis", className="mt-3"),
-        html.H6("Candidate Prompts and Similarity Scores", className="mt-2"),
-        candidates_table,
-        html.P(f"Best prompt: {best_prompt}", className="fw-bold mb-3"),
-        html.H6("CIR Results for Best Prompt", className="mt-3"),
-        images_grid
+        # Main title with icon
+        html.Div([
+            html.I(className="fas fa-brain text-primary me-2"),
+            html.H5("Enhanced Prompt Analysis", className="d-inline text-primary")
+        ], className="mt-3 mb-4"),
+        
+        # Candidates section
+        html.Div([
+            html.H6([html.I(className="fas fa-list-alt me-2"), "Candidate Prompts & Scores"], className="mb-3 text-secondary"),
+            candidates_table
+        ]),
+        
+        # Best prompt highlight card
+        dbc.Alert([
+            html.H6([html.I(className="fas fa-trophy text-warning me-2"), "Selected Best Prompt"], className="alert-heading mb-2"),
+            html.P(f'"{best_prompt}"', className="mb-1 font-monospace"),
+            html.Small(f"Similarity Score: {best_sim_score:.4f}", className="text-muted")
+        ], color="light", className="border-start border-warning border-4"),
+        
+        # Results section
+        html.Div([
+            html.H6([html.I(className="fas fa-images me-2"), "CIR Results for Best Prompt"], className="mt-4 mb-3 text-secondary"),
+            images_grid
+        ])
     ]
 
     return status, enhance_children
