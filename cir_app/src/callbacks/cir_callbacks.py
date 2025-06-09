@@ -756,7 +756,8 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
 def populate_prompt_enhancement_tab(enhanced_data):
     """Populate the prompt enhancement tab when new enhanced prompts are available"""
     if not enhanced_data:
-        raise PreventUpdate
+        # Clear prompt enhancement tab when starting a new CIR query or no enhancement data
+        return [], [], None
     prompts = enhanced_data.get('prompts', [])
     sims = enhanced_data.get('similarities', [])
     positions = enhanced_data.get('positions', [])
