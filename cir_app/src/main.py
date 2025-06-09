@@ -24,7 +24,7 @@ import src.callbacks.cir_callbacks
 def run_ui():
     """Run the Dash UI application"""
     external_stylesheets = [dbc.themes.BOOTSTRAP]
-    app = Dash(__name__, external_stylesheets=external_stylesheets)
+    app = Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
     
     # Create widgets
     help_popup_widget = help_popup.create_help_popup()
@@ -35,11 +35,32 @@ def run_ui():
     histogram_widget = histogram.create_histogram()
 
     # Create right tab with available widgets
-    right_tab = dcc.Tabs([
-        dcc.Tab(label='wordcloud', children=wordcloud_widget),
-        dcc.Tab(label='images', children=gallery_widget),
-        dcc.Tab(label='histogram', children=histogram_widget),
-    ])
+    right_tab = dcc.Tabs(
+        id='right-tabs',
+        value='wordcloud',
+        children=[
+            dcc.Tab(label='wordcloud', value='wordcloud', id='tab-wordcloud', children=wordcloud_widget),
+            dcc.Tab(label='images', value='images', id='tab-images', children=gallery_widget),
+            dcc.Tab(label='histogram', value='histogram', id='tab-histogram', children=histogram_widget),
+            dcc.Tab(label='prompt enhancement', value='prompt-enhancement', id='tab-prompt-enhancement', children=[
+                html.Div([
+                    # Scrollable prompt cards container
+                    html.Div(id='prompt-enhancement-content', style={
+                        'overflowY': 'auto',
+                        'flex': '1 1 auto',
+                        'padding': '1rem',
+                        'paddingBottom': '1rem'
+                    }),
+                    # Hidden radio for callback wiring
+                    dcc.RadioItems(id='prompt-selection', options=[], value=None, style={'display': 'none'})
+                ], style={
+                    'display': 'flex',
+                    'flexDirection': 'column',
+                    'height': '100%'
+                })
+            ]),
+        ]
+    )
 
     # Create CIR interface
     cir_interface = dbc.Card([
@@ -114,7 +135,15 @@ def run_ui():
                 html.H5("Retrieved Images", className="mb-3"),
                 html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", 
                         className="text-muted text-center p-4")
-            ])
+            ]),
+            # Container for the Enhance Prompt button (always present, disabled until selection)
+            html.Div(
+                dbc.Button(
+                    "Enhance prompt", id='enhance-prompt-button', color='secondary', disabled=True
+                ),
+                id='cir-enhance-container', className='d-flex justify-content-end mt-2'
+            ),
+            html.Div(id='cir-enhance-results', children=[], className='mt-4'),
         ])
     ], className="mt-4")
 
@@ -164,7 +193,11 @@ def run_ui():
             # Store for selected image info in CIR mode
             dcc.Store(id='selected-image-data', data=None),
             # Store for selected gallery image IDs (for highlighting in images tab)
-            dcc.Store(id='selected-gallery-image-ids', data=[])
+            dcc.Store(id='selected-gallery-image-ids', data=[]),
+            # Store for the selected CIR result image ID to support prompt enhancement
+            dcc.Store(id='cir-selected-image-id', data=None),
+            # Store for enhanced prompts data and results
+            dcc.Store(id='cir-enhanced-prompts-data', data=None)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )

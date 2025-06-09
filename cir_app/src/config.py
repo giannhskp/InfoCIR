@@ -23,7 +23,7 @@ DEFAULT_PROJECTION = 'UMAP'
 PORT = 8051  # Port number for the Dash application
 
 # Dataset configuration
-DATASET_SAMPLE_SIZE = 1000  # Sample size from dataset
+DATASET_SAMPLE_SIZE = 30000  # Sample size from dataset
 
 # Path configuration
 # You should set DATASET_ROOT_PATH to point to your actual dataset directory
@@ -43,6 +43,9 @@ AUGMENTED_DATASET_PATH = WORK_DIR / 'augmented_dataset.csv'
 
 # CLIP model configuration
 CLIP_MODEL_NAME = 'ViT-B/32'  # CLIP model to use for image retrieval
+
+# Prompt enhancement configuration
+ENHANCEMENT_CANDIDATE_PROMPTS = 10  # Number of candidate prompts to generate for enhancement
 
 # SEARLE CIR configuration
 CIR_DATASET_PATH = AUGMENTED_DATASET_PATH  # Path to CIR augmented dataset CSV
