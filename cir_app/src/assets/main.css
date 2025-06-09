@@ -189,4 +189,19 @@ html, body {
 .result-card-wrapper.selected .result-card {
     background-color: #d4edda;
     border: 2px solid #28a745;
+}
+
+/* Prompt enhancement tab styling */
+#tab-prompt-enhancement {
+    /* Ensure the tab pane fills the parent height */
+    height: 100%;
+}
+#tab-prompt-enhancement .prompt-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.5rem;
+}
+#tab-prompt-enhancement .prompt-cards-container > div {
+    width: 100%;
 } 

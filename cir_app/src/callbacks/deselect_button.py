@@ -7,7 +7,8 @@ from src.widgets import scatterplot
      Output('selected-gallery-image-ids', 'data', allow_duplicate=True),
      Output('cir-toggle-button', 'children', allow_duplicate=True),
      Output('cir-toggle-button', 'color', allow_duplicate=True),
-     Output('cir-toggle-state', 'data', allow_duplicate=True)],
+     Output('cir-toggle-state', 'data', allow_duplicate=True),
+     Output('prompt-selection', 'value', allow_duplicate=True)],
     [State('projection-radio-buttons', 'value'),
      State('scatterplot', 'figure'),
      State('cir-toggle-state', 'data')],
@@ -35,4 +36,4 @@ def deselect_button_is_pressed(projection_selected, scatterplot_fig, cir_toggle_
         cir_button_color = 'success' if not cir_toggle_state else 'warning'
         new_cir_toggle_state = cir_toggle_state
     
-    return new_scatterplot_fig, [], cir_button_text, cir_button_color, new_cir_toggle_state 
+    return new_scatterplot_fig, [], cir_button_text, cir_button_color, new_cir_toggle_state, -1 

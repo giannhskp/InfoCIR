@@ -20,6 +20,9 @@ from dash.exceptions import PreventUpdate
 from dash import ALL
 import json
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from dash import dcc
+import plotly.graph_objects as go
+from src.widgets import gallery, wordcloud, histogram, scatterplot
 
 # Thread lock and CIR system instance
 lock = threading.Lock()
@@ -732,3 +735,250 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     ]
     
     return enhance_children, enhanced_data
+
+# Callback to populate the prompt enhancement tab with radio options
+@callback(
+    [Output('prompt-enhancement-content', 'children'),
+     Output('prompt-selection', 'options'),
+     Output('prompt-selection', 'value')],
+    Input('cir-enhanced-prompts-data', 'data'),
+    prevent_initial_call=True
+)
+def populate_prompt_enhancement_tab(enhanced_data):
+    """Populate the prompt enhancement tab when new enhanced prompts are available"""
+    if not enhanced_data:
+        raise PreventUpdate
+    prompts = enhanced_data.get('prompts', [])
+    sims = enhanced_data.get('similarities', [])
+    best_idx = enhanced_data.get('best_idx')
+    
+    # Create styled cards for each enhanced prompt
+    cards = []
+    for i, (prompt, sim) in enumerate(zip(prompts, sims)):
+        is_best = (i == best_idx)
+        card_class = "mb-2 border-success" if is_best else "mb-2"
+        card_style = {'borderWidth': '2px', 'cursor': 'pointer'} if is_best else {'cursor': 'pointer'}
+        icon_class = "fas fa-crown text-warning" if is_best else "fas fa-magic text-info"
+        title_class = "mb-1 fw-bold text-success" if is_best else "mb-1 fw-bold"
+        title_text = "Best Enhanced Prompt" if is_best else f"Enhanced Prompt {i+1}"
+        card = html.Div([
+            dbc.Card([
+                dbc.CardBody([
+                    html.Div([
+                        html.I(className=f"{icon_class} me-2", style={'fontSize': '1.1em'}),
+                        html.H6(title_text, className=title_class),
+                        html.P(f'"{prompt}"', className="font-monospace text-dark mb-1", style={'fontSize': '0.9em'}),
+                        html.Small([
+                            html.Span("Similarity Score: ", className="text-muted"),
+                            html.Span(f"{sim:.4f}", className="badge bg-secondary ms-1")
+                        ])
+                    ])
+                ])
+            ], className=card_class, style=card_style)
+        ], id={'type': 'prompt-card', 'index': i}, n_clicks=0)
+        cards.append(card)
+    
+    # Combine radio items for callback wiring (enhanced prompts only)
+    all_options = [{'label': f"Enhanced Prompt {i+1}", 'value': i} for i in range(len(prompts))]
+    
+    content = [
+        html.Div([
+            html.I(className="fas fa-list-alt text-primary me-2"),
+            html.H5("Select Prompt Results to Visualize", className="text-primary mb-3")
+        ]),
+        html.Div(cards, className="prompt-cards-container")
+    ]
+    
+    return content, all_options, None  # Default to no selection (original CIR)
+
+# Callback to handle prompt card clicks and update selection
+@callback(
+    [Output('prompt-selection', 'value', allow_duplicate=True),
+     Output({'type': 'prompt-card', 'index': ALL}, 'style')],
+    Input({'type': 'prompt-card', 'index': ALL}, 'n_clicks'),
+    [State('prompt-selection', 'value'),
+     State('cir-enhanced-prompts-data', 'data')],
+    prevent_initial_call=True
+)
+def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data):
+    """Handle card clicks for prompt selection"""
+    if not any(n_clicks_list) or not enhanced_data:
+        raise PreventUpdate
+    
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    
+    # Get the clicked card index
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    try:
+        clicked_dict = json.loads(triggered_id)
+        clicked_index = clicked_dict.get('index')
+    except Exception:
+        raise PreventUpdate
+    
+    # Deselect if clicking the same prompt twice
+    if clicked_index == current_value:
+        new_selected = -1
+    else:
+        new_selected = clicked_index
+    
+    prompts = enhanced_data.get('prompts', [])
+    best_idx = enhanced_data.get('best_idx')
+    card_styles = []
+    # Enhanced prompt cards styling
+    for i in range(len(prompts)):
+        is_best = (i == best_idx)
+        is_selected = (i == new_selected)
+        if is_selected:
+            if is_best:
+                style = {'backgroundColor': 'rgba(25, 135, 84, 0.1)', 'border': '2px solid #198754'}
+            else:
+                style = {'backgroundColor': 'rgba(13, 202, 240, 0.1)', 'border': '2px solid #0dcaf0'}
+        else:
+            style = {}
+        card_styles.append(style)
+    return new_selected, card_styles
+
+# Callback to update card styles when prompt-selection changes from external sources
+@callback(
+    Output({'type': 'prompt-card', 'index': ALL}, 'style', allow_duplicate=True),
+    Input('prompt-selection', 'value'),
+    State('cir-enhanced-prompts-data', 'data'),
+    prevent_initial_call=True
+)
+def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data):
+    """Update card styles when prompt-selection changes from external sources (like deselect button)"""
+    if not enhanced_data:
+        raise PreventUpdate
+    
+    prompts = enhanced_data.get('prompts', [])
+    best_idx = enhanced_data.get('best_idx')
+    card_styles = []
+    
+    # Enhanced prompt cards styling
+    for i in range(len(prompts)):
+        is_best = (i == best_idx)
+        is_selected = (i == selected_idx)
+        
+        if is_selected:
+            if is_best:
+                style = {'backgroundColor': 'rgba(25, 135, 84, 0.1)', 'border': '2px solid #198754'}
+            else:
+                style = {'backgroundColor': 'rgba(13, 202, 240, 0.1)', 'border': '2px solid #0dcaf0'}
+        else:
+            style = {}
+        
+        card_styles.append(style)
+    
+    return card_styles
+
+# Callback to update all widgets when an enhanced prompt is selected
+@callback(
+    [Output('gallery', 'children', allow_duplicate=True),
+     Output('wordcloud', 'list', allow_duplicate=True),
+     Output('histogram', 'figure', allow_duplicate=True),
+     Output('scatterplot', 'figure', allow_duplicate=True),
+     Output('selected-image-data', 'data', allow_duplicate=True),
+     Output('selected-gallery-image-ids', 'data', allow_duplicate=True)],
+    Input('prompt-selection', 'value'),
+    [State('cir-enhanced-prompts-data', 'data'),
+     State('cir-search-data', 'data'),
+     State('cir-toggle-state', 'data'),
+     State('scatterplot', 'figure'),
+     State('selected-gallery-image-ids', 'data')],
+    prevent_initial_call=True
+)
+def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data, cir_toggle_state, scatterplot_fig, selected_gallery_image_ids):
+    """Update widgets for original or enhanced prompt selection, recomputing final query for enhanced and allowing revert."""
+    if not cir_toggle_state or selected_idx is None or (enhanced_data is None and selected_idx != -1):
+        raise PreventUpdate
+    df = Dataset.get()
+    # Determine axis and base query coords
+    axis_title = scatterplot_fig['layout']['xaxis']['title']['text']
+    xq = search_data.get('umap_x_query'); yq = search_data.get('umap_y_query')
+    if axis_title != 'umap_x':
+        xq = search_data.get('tsne_x_query'); yq = search_data.get('tsne_y_query')
+    # Handle original revert
+    if selected_idx == -1:
+        topk_ids = search_data.get('topk_ids', [])
+        top1_id = search_data.get('top1_id')
+        xfq = search_data.get('umap_x_final_query'); yfq = search_data.get('umap_y_final_query')
+        if axis_title != 'umap_x':
+            xfq, yfq = None, None
+    else:
+        # Enhanced prompt branch
+        prompts = enhanced_data.get('prompts', [])
+        results_list = enhanced_data.get('all_results', [])
+        if selected_idx >= len(results_list):
+            raise PreventUpdate
+        selected_results = results_list[selected_idx]
+        # Build top-k IDs
+        topk_ids = []
+        for img_name, _ in selected_results:
+            try: idx = int(img_name)
+            except: idx = img_name
+            if idx in df.index:
+                topk_ids.append(idx)
+        top1_id = topk_ids[0] if topk_ids else None
+        # Recompute final query embedding for enhanced prompt
+        _, content_string = search_data['upload_contents'].split(',')
+        decoded = base64.b64decode(content_string)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        tmp.write(decoded); tmp.close()
+        device_model = next(cir_system.clip_model.parameters()).device
+        img = Image.open(tmp.name).convert('RGB')
+        inp = cir_system.preprocess(img).unsqueeze(0).to(device_model)
+        with torch.no_grad():
+            feat = cir_system.clip_model.encode_image(inp)
+            feat = F.normalize(feat.float(), dim=-1)
+        if cir_system.eval_type in ['phi','searle','searle-xl']:
+            pseudo = cir_system.phi(feat)
+            sel_prompt = prompts[selected_idx]
+            cap = f"a photo of $ that {sel_prompt}"
+            tok = clip.tokenize([cap], context_length=77).to(device_model)
+            from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
+            final_feat = encode_with_pseudo_tokens(cir_system.clip_model, tok, pseudo)
+            final_feat = F.normalize(final_feat)
+        else:
+            final_feat = feat
+        umap_path = config.WORK_DIR / 'umap_reducer.pkl'
+        umap_reducer = pickle.load(open(str(umap_path),'rb'))
+        fnp = final_feat.detach().cpu().numpy()
+        fur = umap_reducer.transform(fnp)
+        xfq, yfq = float(fur[0][0]), float(fur[0][1])
+        os.unlink(tmp.name)
+    # Reset CIR traces
+    scatterplot_fig['data'] = scatterplot_fig['data'][:3]
+    scatterplot_fig['layout']['images'] = []
+    main = scatterplot_fig['data'][0]
+    xs, ys, cds = main['x'], main['y'], main['customdata']
+    # Plot Top-K and Top-1
+    x1,y1,xk,yk = [],[],[],[]
+    cmp1 = int(top1_id) if top1_id is not None else None
+    cmpk = [int(i) for i in topk_ids]
+    for xi, yi, val in zip(xs, ys, cds):
+        try: v = int(val)
+        except: v = val
+        if v==cmp1: x1.append(xi); y1.append(yi)
+        elif v in cmpk: xk.append(xi); yk.append(yi)
+    if xk:
+        scatterplot_fig['data'].append(go.Scatter(x=xk,y=yk,mode='markers',marker=dict(color=config.TOP_K_COLOR,size=7),name='Top-K').to_plotly_json())
+    if x1:
+        scatterplot_fig['data'].append(go.Scatter(x=x1,y=y1,mode='markers',marker=dict(color=config.TOP_1_COLOR,size=9),name='Top-1').to_plotly_json())
+    # Plot Query and Final Query
+    if xq is not None:
+        scatterplot_fig['data'].append(go.Scatter(x=[xq],y=[yq],mode='markers',marker=dict(color=config.QUERY_COLOR,size=12,symbol='star'),name='Query').to_plotly_json())
+    if xfq is not None:
+        scatterplot_fig['data'].append(go.Scatter(x=[xfq],y=[yfq],mode='markers',marker=dict(color=config.FINAL_QUERY_COLOR,size=10,symbol='diamond'),name='Final Query').to_plotly_json())
+    # Wordcloud
+    counts = df.loc[topk_ids]['class_name'].value_counts()
+    if len(counts):
+        wg = wordcloud.wordcloud_weight_rescale(counts.values,1,counts.max())
+        wc = sorted([[cn,w] for cn,w in zip(counts.index,wg)],key=lambda x:x[1],reverse=True)
+    else: wc=[]
+    # Gallery and Histogram
+    cir_df = df.loc[topk_ids]
+    gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,selected_gallery_image_ids)
+    hist = histogram.draw_histogram(cir_df)
+    return gal, wc, hist, scatterplot_fig, None, selected_gallery_image_ids
