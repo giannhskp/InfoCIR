@@ -75,10 +75,13 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True)],
     [Input('cir-search-button', 'n_clicks')],
-    [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
+    [State('cir-upload-image', 'contents'),
+     State('cir-text-prompt', 'value'),
+     State('cir-top-n', 'value'),
+     State('custom-dropdown', 'value')],
     prevent_initial_call=True
 )
-def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
+def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
@@ -92,12 +95,13 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
         tmp.write(decoded)
         tmp.close()
 
+        print(f"Selected CIR model: {selected_model}")
 
         with cir_systems.lock:
-            results = cir_systems.cir_system_searle.query(tmp.name, text_prompt, top_n)
-
-        with cir_systems.lock:
-            results_freedom = cir_systems.cir_system_freedom.query(tmp.name, text_prompt, top_n)
+            if selected_model == "freedom":
+                results = cir_systems.cir_system_freedom.query(tmp.name, text_prompt, top_n)
+            else:  # default to searle
+                results = cir_systems.cir_system_searle.query(tmp.name, text_prompt, top_n)
 
         # Build result cards using paths from the loaded dataset
         cards = []
@@ -988,3 +992,14 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,[])
     hist = histogram.draw_histogram(cir_df)
     return gal, wc, hist, scatterplot_fig, None, []
+
+@callback(
+    Output('model-change-flag', 'children'),
+    Output('cir-results', 'children', allow_duplicate=True),
+    Output('cir-vis-buttons', 'style', allow_duplicate=True),
+    Input('custom-dropdown', 'value'),
+    prevent_initial_call=True
+)
+def clear_results_on_model_change(_):
+    """Clear CIR results when the model dropdown changes"""
+    return "changed", html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"), {'display': 'none'}

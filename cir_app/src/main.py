@@ -151,6 +151,7 @@ def run_ui():
     app.layout = html.Div(
         dbc.Container([
             help_popup_widget,
+            html.Div(id='model-change-flag', style={'display': 'none'}),
             dbc.Stack([
                 projection_radio_buttons_widget,
                 html.Div([
@@ -162,6 +163,16 @@ def run_ui():
                                    style={'display': 'block', 'color': 'black'}),
                         href='#cir-interface',
                         style={'textDecoration': 'none'}
+                    ),
+                    dbc.Select(
+                        id='custom-dropdown',
+                        options=[
+                            {"label": "SEARLE", "value": "SEARLE"},
+                            {"label": "freedom", "value": "freedom"}
+                        ],
+                        value="SEARLE",
+                        style={"width": "150px"},
+                        class_name="me-2"
                     ),
                     dbc.Button('Visualize CIR results', 
                                id='cir-toggle-button',
