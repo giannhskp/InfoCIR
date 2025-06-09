@@ -122,6 +122,7 @@ def run_ui():
                 ),
                 id='cir-enhance-container', className='d-flex justify-content-end mt-2'
             ),
+            html.Div(id='cir-enhance-results', children=[], className='mt-4'),
         ])
     ], className="mt-4")
 

@@ -73,7 +73,8 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-search-status', 'children'),
      Output('cir-search-data', 'data'),
      Output('cir-toggle-button', 'style', allow_duplicate=True),
-     Output('cir-run-button', 'style')],
+     Output('cir-run-button', 'style'),
+     Output('cir-enhance-results', 'children', allow_duplicate=True)],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
     prevent_initial_call=True
@@ -82,8 +83,8 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
-        # Show Run CIR button, hide visualize button
-        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}
+        # Show Run CIR button, hide visualize button, clear enhance results
+        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, []
     try:
         # Decode and save query image
         _, content_string = upload_contents.split(',')
@@ -132,7 +133,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             data = open(img_path, 'rb').read()
             src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
             
-            # Create card body with score
+            # Create card body with score (like original CIR)
             card_body = dbc.CardBody([
                 html.Img(src=src, className='img-fluid', style={'maxHeight':'150px','width':'auto'}),
                 html.P(f"Score: {score:.4f}", className='small text-center mt-1')
@@ -233,11 +234,11 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
             'top_n': top_n
         }
         # Show visualize button, hide Run CIR
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}
+        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, []
     except Exception as e:
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        # On error, hide visualize button, show Run CIR
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}
+        # On error, hide visualize button, show Run CIR, clear enhance results
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, []
 
 # Button toggle callback for CIR visualization
 @callback(
@@ -332,7 +333,8 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames):
 
 # New callback to enhance the user prompt and evaluate against the selected image
 @callback(
-    Output('cir-search-status', 'children', allow_duplicate=True),
+    [Output('cir-search-status', 'children', allow_duplicate=True),
+     Output('cir-enhance-results', 'children', allow_duplicate=True)],
     Input('enhance-prompt-button', 'n_clicks'),
     [State('cir-search-data', 'data'), State('cir-selected-image-id', 'data')],
     prevent_initial_call=True
@@ -479,13 +481,54 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     # Clean up temporary file
     os.unlink(tmp.name)
 
-    # Build display
-    lines = []
-    lines.append(html.B("Generated prompts and similarity scores:"))
-    lines.append(html.Ul([html.Li(f"{i+1}. {p} - {s:.4f}") for i,(p,s) in enumerate(zip(prompts,sims))]))
-    lines.append(html.P(f"Best prompt: {best_prompt}"))
-    lines.append(html.B("CIR results for best prompt:"))
-    lines.append(html.Ul([html.Li(f"{i+1}. {name} (score: {score:.4f})") for i,(name,score) in enumerate(full_results)]))
-    lines.append(html.P(f"Ideal image position: {position}"))
+    # Status message
+    status = html.Div("Enhanced prompt generated. See details below.", className="text-info small mb-3")
 
-    return lines
+    # Candidate prompts table
+    candidates_table = dbc.Table(
+        [html.Thead(html.Tr([html.Th("Prompt"), html.Th("Similarity")])),
+         html.Tbody([html.Tr([html.Td(p), html.Td(f"{s:.4f}")]) for p, s in zip(prompts, sims)])],
+        bordered=True, striped=True, hover=True, size="sm", responsive=True, className="mb-4"
+    )
+
+    # Build image cards for CIR results of best prompt
+    df = Dataset.get()
+    cards = []
+    for img_name, score in full_results:
+        img_path = None
+        try:
+            idx = int(img_name)
+            if idx in df.index:
+                img_path = df.loc[idx]['image_path']
+        except:
+            if img_name in df.index:
+                img_path = df.loc[img_name]['image_path']
+        if not img_path or not os.path.exists(img_path):
+            continue
+        data = open(img_path, "rb").read()
+        src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
+        # Create card body with score (like original CIR)
+        card_body = dbc.CardBody([
+            html.Img(src=src, className='img-fluid', style={'maxHeight':'150px','width':'auto'}),
+            html.P(f"Score: {score:.4f}", className='small text-center mt-1')
+        ])
+        card = dbc.Card(card_body, className='result-card', style={'cursor': 'default'})
+        cards.append(dbc.Col(card, width=2))
+
+    # Arrange cards into rows of up to 6
+    rows = []
+    for i in range(0, len(cards), 6):
+        rows.append(dbc.Row(cards[i:i+6], className="g-2 mb-3"))
+    images_grid = html.Div(rows)
+
+    # Build enhance results children
+    enhance_children = [
+        html.H5("Enhanced Prompt Analysis", className="mt-3"),
+        html.H6("Candidate Prompts and Similarity Scores", className="mt-2"),
+        candidates_table,
+        html.P(f"Best prompt: {best_prompt}", className="fw-bold mb-3"),
+        html.H6("CIR Results for Best Prompt", className="mt-3"),
+        images_grid
+    ]
+
+    return status, enhance_children
