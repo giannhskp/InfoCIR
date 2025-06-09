@@ -90,6 +90,17 @@ def run_ui():
                         ],
                         value=10,
                         className="mb-3"
+                    ),
+                    html.Label("Model:", className="form-label fw-bold"),
+                    dbc.Select(
+                        id='custom-dropdown',
+                        options=[
+                            {"label": "SEARLE", "value": "SEARLE"},
+                            {"label": "freedom", "value": "freedom"}
+                        ],
+                        value="SEARLE",
+                        style={"width": "100%"},
+                        className="mb-3"
                     )
                 ], width=4),
                 dbc.Col([
@@ -131,16 +142,6 @@ def run_ui():
             dbc.Stack([
                 projection_radio_buttons_widget,
                 html.Div([
-                    dbc.Select(
-                        id='custom-dropdown',
-                        options=[
-                            {"label": "SEARLE", "value": "SEARLE"},
-                            {"label": "freedom", "value": "freedom"}
-                        ],
-                        value="SEARLE",
-                        style={"width": "150px"},
-                        class_name="me-2"
-                    ),
                     dbc.Button('Deselect everything', 
                             id='deselect-button', 
                             class_name="btn btn-outline-primary me-2 header-button"),
