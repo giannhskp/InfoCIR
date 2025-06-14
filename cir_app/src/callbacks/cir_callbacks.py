@@ -433,7 +433,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     all_prompt_results = []
     for p in prompts:
         # Use the same query method as full CIR to get full results
-        full_prompt_results = cir_system.query(tmp.name, p, search_data['top_n'])
+        full_prompt_results = cir_systems.cir_system_searle.query(tmp.name, p, search_data['top_n'])
         all_prompt_results.append(full_prompt_results)
         
         # Find the similarity score for the ideal image in these results
@@ -928,19 +928,19 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
         decoded = base64.b64decode(content_string)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
         tmp.write(decoded); tmp.close()
-        device_model = next(cir_system.clip_model.parameters()).device
+        device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
         img = Image.open(tmp.name).convert('RGB')
-        inp = cir_system.preprocess(img).unsqueeze(0).to(device_model)
+        inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
         with torch.no_grad():
-            feat = cir_system.clip_model.encode_image(inp)
+            feat = cir_systems.cir_system_searle.clip_model.encode_image(inp)
             feat = F.normalize(feat.float(), dim=-1)
-        if cir_system.eval_type in ['phi','searle','searle-xl']:
-            pseudo = cir_system.phi(feat)
+        if cir_systems.cir_system_searle.eval_type in ['phi','searle','searle-xl']:
+            pseudo = cir_systems.cir_system_searle.phi(feat)
             sel_prompt = prompts[selected_idx]
             cap = f"a photo of $ that {sel_prompt}"
             tok = clip.tokenize([cap], context_length=77).to(device_model)
             from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
-            final_feat = encode_with_pseudo_tokens(cir_system.clip_model, tok, pseudo)
+            final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo)
             final_feat = F.normalize(final_feat)
         else:
             final_feat = feat
