@@ -1000,9 +1000,17 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     Output('cir-toggle-button', 'color', allow_duplicate=True),
     Output('cir-toggle-button', 'style', allow_duplicate=True),
     Output('cir-toggle-state', 'data', allow_duplicate=True),
+    Output('cir-run-button', 'style', allow_duplicate=True),
     Input('custom-dropdown', 'value'),
     prevent_initial_call=True
 )
 def clear_results_on_model_change(_):
-    """Clear CIR results when the model dropdown changes"""
-    return "changed", html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"), 'Visualize CIR results', 'success', {'display': 'block', 'color': 'black'}, False
+    return (
+        "changed",
+        html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"),
+        'Visualize CIR results',
+        'success',
+        {'display': 'none', 'color': 'black'},
+        False,
+        {'display': 'block', 'color': 'black'}
+    )
