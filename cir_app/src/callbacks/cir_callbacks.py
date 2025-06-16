@@ -8,9 +8,6 @@ from PIL import Image
 from src import config
 import os
 import sys
-# Ensure the SEARLE demo directory is on the path for local imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'SEARLE'))
-from compose_image_retrieval_demo import ComposedImageRetrievalSystem
 from src.Dataset import Dataset
 import torch
 import torch.nn.functional as F
@@ -24,9 +21,7 @@ from dash import dcc
 import plotly.graph_objects as go
 from src.widgets import gallery, wordcloud, histogram, scatterplot
 
-# Thread lock and CIR system instance
-lock = threading.Lock()
-cir_system = None
+from src.shared import cir_systems
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -80,10 +75,13 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True)],
     [Input('cir-search-button', 'n_clicks')],
-    [State('cir-upload-image', 'contents'), State('cir-text-prompt', 'value'), State('cir-top-n', 'value')],
+    [State('cir-upload-image', 'contents'),
+     State('cir-text-prompt', 'value'),
+     State('cir-top-n', 'value'),
+     State('custom-dropdown', 'value')],
     prevent_initial_call=True
 )
-def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
+def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
@@ -97,25 +95,13 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
         tmp.write(decoded)
         tmp.close()
 
-        global cir_system
-        if cir_system is None:
-            with lock:
-                if cir_system is None:
-                    cir_system = ComposedImageRetrievalSystem(
-                        dataset_path=config.CIR_DATASET_PATH,
-                        dataset_type=config.CIR_DATASET_TYPE,
-                        clip_model_name=config.CIR_CLIP_MODEL_NAME,
-                        eval_type=config.CIR_EVAL_TYPE,
-                        preprocess_type=config.CIR_PREPROCESS_TYPE,
-                        exp_name=config.CIR_EXP_NAME,
-                        phi_checkpoint_name=config.CIR_PHI_CHECKPOINT_NAME,
-                        features_path=config.CIR_FEATURES_PATH,
-                        load_features=config.CIR_LOAD_FEATURES,
-                    )
-                    cir_system.create_database(split=config.CIR_SPLIT)
+        print(f"Selected CIR model: {selected_model}")
 
-        with lock:
-            results = cir_system.query(tmp.name, text_prompt, top_n)
+        with cir_systems.lock:
+            if selected_model == "freedom":
+                results = cir_systems.cir_system_freedom.query(tmp.name, text_prompt, top_n)
+            else:  # default to searle
+                results = cir_systems.cir_system_searle.query(tmp.name, text_prompt, top_n)
 
         # Build result cards using paths from the loaded dataset
         cards = []
@@ -184,26 +170,26 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n):
                     topk_ids.append(img_name)
         top1_id = topk_ids[0] if topk_ids else None
         # Compute query embedding and normalize
-        device_model = next(cir_system.clip_model.parameters()).device
+        device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
         query_img = Image.open(tmp.name).convert('RGB')
-        query_input = cir_system.preprocess(query_img).unsqueeze(0).to(device_model)
+        query_input = cir_systems.cir_system_searle.preprocess(query_img).unsqueeze(0).to(device_model)
         with torch.no_grad():
-            feat = cir_system.clip_model.encode_image(query_input)
+            feat = cir_systems.cir_system_searle.clip_model.encode_image(query_input)
             feat = F.normalize(feat.float(), dim=-1)
         feat_np = feat.cpu().numpy()
         
         # Compute the final composed query embedding (image + text) used for actual search
         with torch.no_grad():
-            if cir_system.eval_type in ['phi', 'searle', 'searle-xl']:
+            if cir_systems.cir_system_searle.eval_type in ['phi', 'searle', 'searle-xl']:
                 # Use phi network to generate pseudo tokens
-                pseudo_tokens = cir_system.phi(feat)
+                pseudo_tokens = cir_systems.cir_system_searle.phi(feat)
                 # Create text with pseudo token placeholder
                 input_caption = f"a photo of $ that {text_prompt}"
                 tokenized_caption = clip.tokenize([input_caption], context_length=77).to(device_model)
                 # Encode text with pseudo tokens - this is the final query embedding
                 from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
                 final_query_features = encode_with_pseudo_tokens(
-                    cir_system.clip_model, tokenized_caption, pseudo_tokens
+                    cir_systems.cir_system_searle.clip_model, tokenized_caption, pseudo_tokens
                 )
                 final_query_features = F.normalize(final_query_features)
             else:
@@ -447,7 +433,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     all_prompt_results = []
     for p in prompts:
         # Use the same query method as full CIR to get full results
-        full_prompt_results = cir_system.query(tmp.name, p, search_data['top_n'])
+        full_prompt_results = cir_systems.cir_system_searle.query(tmp.name, p, search_data['top_n'])
         all_prompt_results.append(full_prompt_results)
         
         # Find the similarity score for the ideal image in these results
@@ -942,19 +928,19 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
         decoded = base64.b64decode(content_string)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
         tmp.write(decoded); tmp.close()
-        device_model = next(cir_system.clip_model.parameters()).device
+        device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
         img = Image.open(tmp.name).convert('RGB')
-        inp = cir_system.preprocess(img).unsqueeze(0).to(device_model)
+        inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
         with torch.no_grad():
-            feat = cir_system.clip_model.encode_image(inp)
+            feat = cir_systems.cir_system_searle.clip_model.encode_image(inp)
             feat = F.normalize(feat.float(), dim=-1)
-        if cir_system.eval_type in ['phi','searle','searle-xl']:
-            pseudo = cir_system.phi(feat)
+        if cir_systems.cir_system_searle.eval_type in ['phi','searle','searle-xl']:
+            pseudo = cir_systems.cir_system_searle.phi(feat)
             sel_prompt = prompts[selected_idx]
             cap = f"a photo of $ that {sel_prompt}"
             tok = clip.tokenize([cap], context_length=77).to(device_model)
             from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
-            final_feat = encode_with_pseudo_tokens(cir_system.clip_model, tok, pseudo)
+            final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo)
             final_feat = F.normalize(final_feat)
         else:
             final_feat = feat
@@ -1006,3 +992,25 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,[])
     hist = histogram.draw_histogram(cir_df)
     return gal, wc, hist, scatterplot_fig, None, []
+
+@callback(
+    Output('model-change-flag', 'children'),
+    Output('cir-results', 'children', allow_duplicate=True),
+    Output('cir-toggle-button', 'children', allow_duplicate=True),
+    Output('cir-toggle-button', 'color', allow_duplicate=True),
+    Output('cir-toggle-button', 'style', allow_duplicate=True),
+    Output('cir-toggle-state', 'data', allow_duplicate=True),
+    Output('cir-run-button', 'style', allow_duplicate=True),
+    Input('custom-dropdown', 'value'),
+    prevent_initial_call=True
+)
+def clear_results_on_model_change(_):
+    return (
+        "changed",
+        html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"),
+        'Visualize CIR results',
+        'success',
+        {'display': 'none', 'color': 'black'},
+        False,
+        {'display': 'block', 'color': 'black'}
+    )

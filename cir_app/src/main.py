@@ -111,6 +111,17 @@ def run_ui():
                         ],
                         value=10,
                         className="mb-3"
+                    ),
+                    html.Label("Model:", className="form-label fw-bold"),
+                    dbc.Select(
+                        id='custom-dropdown',
+                        options=[
+                            {"label": "SEARLE", "value": "SEARLE"},
+                            {"label": "freedom", "value": "freedom"}
+                        ],
+                        value="SEARLE",
+                        style={"width": "100%"},
+                        className="mb-3"
                     )
                 ], width=4),
                 dbc.Col([
@@ -151,6 +162,7 @@ def run_ui():
     app.layout = html.Div(
         dbc.Container([
             help_popup_widget,
+            html.Div(id='model-change-flag', style={'display': 'none'}),
             dbc.Stack([
                 projection_radio_buttons_widget,
                 html.Div([
