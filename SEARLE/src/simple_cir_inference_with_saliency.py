@@ -499,20 +499,21 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
         
         return x, (qs, ks, vs), attns, attn_outputs
     
-    def generate_text_attribution(self, text_caption: str, target_similarity: torch.Tensor, 
-                                 attribution_type: str = "candidate") -> Dict:
+    def generate_text_attribution(self, text_caption: str, image_features: torch.Tensor, 
+                                 attribution_type: str = "candidate", image_path: str = None) -> Dict:
         """
-        Generate token-level attribution for text prompt.
+        Generate token-level attribution for text prompt based on image-text interaction.
         
         Args:
             text_caption: The input caption (e.g., "as a cartoon character")
-            target_similarity: Target tensor to compute gradients against
+            image_features: Pre-computed image features for this specific image
             attribution_type: Type of attribution ("reference" or "candidate")
+            image_path: Path to the image (for debugging/logging)
             
         Returns:
             Dict with token attributions and readable tokens
         """
-        print(f"🔍 Generating {attribution_type} text attribution...")
+        print(f"🔍 Generating {attribution_type} text attribution for {Path(image_path).name if image_path else 'image'}...")
         
         # Create SEARLE format text
         full_prompt = f"a photo of $ that {text_caption}"
@@ -520,7 +521,12 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
         # Tokenize text
         tokenized_text = clip.tokenize([full_prompt]).to('cuda')
         
-        # Use a simpler approach: recreate the text encoding with fresh computation graph
+        # Ensure image features are properly formatted and require gradients
+        if image_features.dim() == 3:  # If it has sequence dimension, extract CLS token
+            image_features = image_features[:, 0, :]  # Extract CLS token
+        image_features = F.normalize(image_features.detach().requires_grad_(True), dim=-1)
+        
+        # Use image-text interaction: recreate the text encoding with fresh computation graph
         with torch.enable_grad():
             # Recreate text encoding for clean gradient computation
             text_features_new, (qs, ks, vs), attns, attn_outputs = self._clip_encode_text_dense(tokenized_text)
@@ -528,17 +534,23 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
             # Find EOS position
             eos_position = tokenized_text.argmax(dim=-1).item()
             
-            # Recreate the target similarity with this new text encoding
+            # Normalize text features for proper similarity computation
+            text_features_normalized = F.normalize(text_features_new, dim=-1)
+            
+            # Compute ACTUAL IMAGE-TEXT INTERACTION as target
             if attribution_type == "reference":
-                # For reference: use norm of phi output as proxy
-                new_target = torch.norm(text_features_new, p=2, dim=-1)
+                # For reference: How text helps φ network process the reference image
+                # Use the reference image to get pseudo-word features
+                pseudo_word = self.cir_system.phi(image_features)
+                # Target: How well text features align with pseudo-word enhanced features
+                target = F.cosine_similarity(text_features_normalized, pseudo_word, dim=-1)
             else:
-                # For candidates: use the magnitude of text features as proxy
-                new_target = torch.sum(text_features_new ** 2, dim=-1)
+                # For candidates: Actual similarity with this specific candidate image
+                target = F.cosine_similarity(image_features, text_features_normalized, dim=-1)
             
             # Generate attribution using Grad-ECLIP
             attribution_scores = GradECLIPHelper.grad_eclip_text(
-                c=new_target,
+                c=target,
                 qs=qs,
                 ks=ks, 
                 vs=vs,
@@ -713,45 +725,59 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
                 output['text_attribution'] = {}
                 
                 # Reference text attribution (how text relates to reference processing)
-                if generate_reference_saliency and 'reference' in output['saliency_maps']:
-                    # Create target from reference processing
+                if True:  # Generate reference attribution regardless of saliency
+                    # Load reference image and get features
                     ref_image = PIL.Image.open(reference_image_path).convert('RGB')
                     ref_tensor = self.cir_system.preprocess(ref_image).unsqueeze(0).to('cuda')
                     ref_features = self.cir_system.clip_model.encode_image(ref_tensor)
-                    pseudo_tokens = self.cir_system.phi(ref_features)
-                    target_norm = torch.norm(pseudo_tokens, p=2, dim=-1)
                     
                     ref_text_attr = self.generate_text_attribution(
-                        relative_caption, target_norm, "reference"
+                        relative_caption, 
+                        ref_features, 
+                        attribution_type="reference",
+                        image_path=reference_image_path
                     )
                     output['text_attribution']['reference'] = ref_text_attr
                     print("✅ Reference text attribution generated")
                 
                 # Candidate text attribution (how text relates to each candidate)
-                if generate_candidate_saliency and 'candidates' in output['saliency_maps']:
-                    output['text_attribution']['candidates'] = {}
+                # Process top candidates even if saliency wasn't generated
+                output['text_attribution']['candidates'] = {}
+                
+                # Get candidate paths and process them  
+                num_candidates = min(max_candidate_saliency, len(results))
+                for i in range(num_candidates):
+                    image_name, score = results[i]
                     
-                    for image_name, candidate_data in output['saliency_maps']['candidates'].items():
-                        try:
+                    try:
+                        # Try to resolve full image path
+                        dataset_path = None
+                        if self.dataset_info and 'dataset_path' in self.dataset_info:
+                            dataset_path = self.dataset_info['dataset_path']
+                        elif hasattr(self, '_dataset_path'):
+                            dataset_path = self._dataset_path
+                        
+                        candidate_path = self._resolve_image_path(image_name, dataset_path)
+                        
+                        if candidate_path and Path(candidate_path).exists():
                             # Load candidate image and get features
-                            candidate_path = candidate_data['image_path']
                             candidate_image = PIL.Image.open(candidate_path).convert('RGB')
                             candidate_tensor = self.cir_system.preprocess(candidate_image).unsqueeze(0).to('cuda')
                             candidate_features = self.cir_system.clip_model.encode_image(candidate_tensor)
                             
-                            # Use cosine similarity as target
-                            text_features_norm = F.normalize(text_features, dim=-1)
-                            candidate_features_norm = F.normalize(candidate_features, dim=-1)
-                            similarity = torch.sum(text_features_norm * candidate_features_norm, dim=-1)
-                            
                             candidate_text_attr = self.generate_text_attribution(
-                                relative_caption, similarity, "candidate"
+                                relative_caption, 
+                                candidate_features, 
+                                attribution_type="candidate",
+                                image_path=candidate_path
                             )
                             output['text_attribution']['candidates'][image_name] = candidate_text_attr
                             print(f"✅ Text attribution generated for {image_name}")
+                        else:
+                            print(f"⚠️  Could not resolve path for {image_name}")
                             
-                        except Exception as e:
-                            print(f"⚠️  Failed to generate text attribution for {image_name}: {e}")
+                    except Exception as e:
+                        print(f"⚠️  Failed to generate text attribution for {image_name}: {e}")
                 
                 print("✅ Text attribution analysis completed")
                 
