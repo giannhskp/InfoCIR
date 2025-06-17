@@ -499,8 +499,50 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
         
         return x, (qs, ks, vs), attns, attn_outputs
     
+    def _clip_encode_text_dense_with_pseudo(self, text_tokens: torch.Tensor, pseudo_tokens: torch.Tensor, n_layers: int = 8):
+        """Same as _clip_encode_text_dense but replaces the $ token embedding with provided pseudo token(s)."""
+        clip_model = self.cir_system.clip_model
+        # Initial embedding
+        x = clip_model.token_embedding(text_tokens).type(clip_model.dtype)  # [B, N_ctx, D]
+        # Replace $ (token id 259) embedding with pseudo token
+        dollar_mask = (text_tokens == 259)  # shape [B, N_ctx]
+        if dollar_mask.sum() > 0:
+            # Ensure shape compatibility (B, D)
+            if pseudo_tokens.dim() == 1:
+                pseudo_tokens = pseudo_tokens.unsqueeze(0)
+            x[dollar_mask] = pseudo_tokens.to(x.dtype)
+        
+        attn_mask = clip_model.build_attention_mask().to(dtype=x.dtype, device=x.device)
+        x = x + clip_model.positional_embedding.type(clip_model.dtype)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        
+        # Forward through early layers
+        for block in clip_model.transformer.resblocks[:-n_layers]:
+            x = block(x)
+        
+        # Collect components from last n_layers
+        attns, attn_outputs = [], []
+        qs, ks, vs = [], [], []
+        for TR in clip_model.transformer.resblocks[-n_layers:]:
+            x_in = x
+            x = TR.ln_1(x_in)
+            linear = torch._C._nn.linear
+            q, k, v = linear(x, TR.attn.in_proj_weight, TR.attn.in_proj_bias).chunk(3, dim=-1)
+            attn_output, attn = self._attention_layer(q, k, v, num_heads=1, attn_mask=attn_mask)
+            attns.append(attn)
+            attn_outputs.append(attn_output.requires_grad_(True))
+            qs.append(q); ks.append(k); vs.append(v)
+            x_after_attn = linear(attn_output, TR.attn.out_proj.weight, TR.attn.out_proj.bias)
+            x = x_after_attn + x_in
+            x = x + TR.mlp(TR.ln_2(x))
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = clip_model.ln_final(x).type(clip_model.dtype)
+        x = x[torch.arange(x.shape[0]), text_tokens.argmax(dim=-1)] @ clip_model.text_projection
+        return x, (qs, ks, vs), attns, attn_outputs
+    
     def generate_text_attribution(self, text_caption: str, image_features: torch.Tensor, 
-                                 attribution_type: str = "candidate", image_path: str = None) -> Dict:
+                                 attribution_type: str = "candidate", image_path: str = None,
+                                 pseudo_tokens: torch.Tensor = None) -> Dict:
         """
         Generate token-level attribution for text prompt based on image-text interaction.
         
@@ -526,37 +568,37 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
             image_features = image_features[:, 0, :]  # Extract CLS token
         image_features = F.normalize(image_features.detach().requires_grad_(True), dim=-1)
         
-        # Use image-text interaction: recreate the text encoding with fresh computation graph
-        with torch.enable_grad():
-            # Recreate text encoding for clean gradient computation
-            text_features_new, (qs, ks, vs), attns, attn_outputs = self._clip_encode_text_dense(tokenized_text)
-            
-            # Find EOS position
-            eos_position = tokenized_text.argmax(dim=-1).item()
-            
-            # Normalize text features for proper similarity computation
-            text_features_normalized = F.normalize(text_features_new, dim=-1)
-            
-            # Compute ACTUAL IMAGE-TEXT INTERACTION as target
-            if attribution_type == "reference":
-                # For reference: How text helps φ network process the reference image
-                # Use the reference image to get pseudo-word features
-                pseudo_word = self.cir_system.phi(image_features)
-                # Target: How well text features align with pseudo-word enhanced features
-                target = F.cosine_similarity(text_features_normalized, pseudo_word, dim=-1)
-            else:
-                # For candidates: Actual similarity with this specific candidate image
-                target = F.cosine_similarity(image_features, text_features_normalized, dim=-1)
-            
-            # Generate attribution using Grad-ECLIP
-            attribution_scores = GradECLIPHelper.grad_eclip_text(
-                c=target,
-                qs=qs,
-                ks=ks, 
-                vs=vs,
-                attn_outputs=attn_outputs,
-                eos_position=eos_position
-            )
+        # Use provided pseudo tokens or fallback to zeros
+        if pseudo_tokens is None:
+            pseudo_tokens = torch.zeros((1, image_features.shape[-1]), device='cuda', dtype=image_features.dtype)
+        text_features_new, (qs, ks, vs), attns, attn_outputs = self._clip_encode_text_dense_with_pseudo(tokenized_text, pseudo_tokens)
+        
+        # Find EOS position
+        eos_position = tokenized_text.argmax(dim=-1).item()
+        
+        # Normalize text features for proper similarity computation
+        text_features_normalized = F.normalize(text_features_new, dim=-1)
+        
+        # Compute ACTUAL IMAGE-TEXT INTERACTION as target
+        if attribution_type == "reference":
+            # For reference: How text helps φ network process the reference image
+            # Use the reference image to get pseudo-word features
+            pseudo_word = self.cir_system.phi(image_features)
+            # Target: How well text features align with pseudo-word enhanced features
+            target = F.cosine_similarity(text_features_normalized, pseudo_word, dim=-1)
+        else:
+            # For candidates: Actual similarity with this specific candidate image
+            target = F.cosine_similarity(image_features, text_features_normalized, dim=-1)
+        
+        # Generate attribution using Grad-ECLIP
+        attribution_scores = GradECLIPHelper.grad_eclip_text(
+            c=target,
+            qs=qs,
+            ks=ks, 
+            vs=vs,
+            attn_outputs=attn_outputs,
+            eos_position=eos_position
+        )
         
         # Decode tokens for human readability
         if _tokenizer is not None:
@@ -673,10 +715,11 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
                 ref_image = PIL.Image.open(reference_image_path).convert('RGB')
                 ref_tensor = self.cir_system.preprocess(ref_image).unsqueeze(0).to('cuda')
                 ref_features = self.cir_system.clip_model.encode_image(ref_tensor)
+                
+                # Compute φ(reference) pseudo tokens for text attribution
                 pseudo_tokens = self.cir_system.phi(ref_features)
                 
-                # Encode text with pseudo tokens (following SEARLE's format)
-                import clip
+                # Encode text with pseudo tokens (following SEARLE's format) for candidate saliency
                 input_caption = f"a photo of $ that {relative_caption}"
                 text_inputs = clip.tokenize([input_caption]).to('cuda')
                 from encode_with_pseudo_tokens import encode_with_pseudo_tokens
@@ -731,11 +774,15 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
                     ref_tensor = self.cir_system.preprocess(ref_image).unsqueeze(0).to('cuda')
                     ref_features = self.cir_system.clip_model.encode_image(ref_tensor)
                     
+                    # Compute φ(reference) pseudo tokens for attribution generation
+                    pseudo_tokens = self.cir_system.phi(ref_features)
+                    
                     ref_text_attr = self.generate_text_attribution(
                         relative_caption, 
                         ref_features, 
                         attribution_type="reference",
-                        image_path=reference_image_path
+                        image_path=reference_image_path,
+                        pseudo_tokens=pseudo_tokens  # pass φ(reference) tokens
                     )
                     output['text_attribution']['reference'] = ref_text_attr
                     print("✅ Reference text attribution generated")
@@ -769,7 +816,8 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
                                 relative_caption, 
                                 candidate_features, 
                                 attribution_type="candidate",
-                                image_path=candidate_path
+                                image_path=candidate_path,
+                                pseudo_tokens=pseudo_tokens  # ensure same φ(reference)
                             )
                             output['text_attribution']['candidates'][image_name] = candidate_text_attr
                             print(f"✅ Text attribution generated for {image_name}")
