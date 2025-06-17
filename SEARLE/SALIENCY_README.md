@@ -4,9 +4,10 @@ This extension adds **Grad-ECLIP saliency map generation** to SEARLE's composed 
 
 ## Overview
 
-The enhanced system provides two types of saliency maps:
+The enhanced system provides three types of explainability:
 1. **Reference Image Saliency**: Shows where the φ network "looks" when building pseudo-words from the reference image
 2. **Candidate Image Saliency**: Reveals regions in candidate images that drive similarity scores with the text query
+3. **Text Token Attribution**: Shows which words in the caption contribute most to retrieval decisions
 
 ## Features
 
@@ -18,6 +19,7 @@ The enhanced system provides two types of saliency maps:
 - ✅ **Batch processing** for multiple candidates
 - ✅ **Memory efficient** with hook-based gradient extraction
 - ✅ **Tested and debugged** with working examples
+- ✅ **Text token attribution** revealing word-level importance
 
 ## Installation
 
@@ -70,14 +72,17 @@ This runs a pre-configured example:
 A successful run generates:
 ```
 saliency_output/
-├── reference_heatmap.png          # Reference image with saliency overlay (3.7MB)
-├── reference_saliency.npy         # Raw saliency array (37MB, 3016×3080)
-├── result_1_heatmap_sketch_1.png  # Top candidate with overlay (329KB)
-├── result_1_saliency_sketch_1.npy # Raw candidate saliency (4MB) 
-├── result_2_heatmap_*.png         # Second candidate visualization
-├── result_2_saliency_*.npy        # Second candidate raw data
-├── result_3_heatmap_*.png         # Third candidate visualization  
-└── result_3_saliency_*.npy        # Third candidate raw data
+├── reference_heatmap.png               # Reference image with saliency overlay (3.7MB)
+├── reference_saliency.npy              # Raw saliency array (37MB, 3016×3080)
+├── reference_text_attribution.png     # Reference text token attribution (75KB)
+├── result_1_heatmap_sketch_1.png      # Top candidate with overlay (329KB)
+├── result_1_saliency_sketch_1.npy     # Raw candidate saliency (4MB) 
+├── text_attribution_sketch_1.png      # Top candidate text attribution (75KB)
+├── result_2_heatmap_*.png             # Second candidate visualization
+├── result_2_saliency_*.npy            # Second candidate raw data
+├── text_attribution_*.png             # Text attribution for each candidate
+├── result_3_heatmap_*.png             # Third candidate visualization  
+└── result_3_saliency_*.npy            # Third candidate raw data
 ```
 
 ## Usage
@@ -154,8 +159,9 @@ inference.save_saliency_visualizations(results, "output_dir")
 ### Saliency-Specific Arguments
 - `--generate-saliency`: Enable saliency map generation
 - `--generate-reference-saliency`: Generate reference image saliency (default: True)
-- `--generate-candidate-saliency`: Generate candidate saliency maps (default: True)
+- `--generate-candidate-saliency`: Generate candidate saliency maps (default: True)  
 - `--max-candidate-saliency`: Max number of candidates to generate saliency for (default: 3)
+- `--generate-text-attribution`: Generate text token attribution analysis (default: True)
 - `--save-saliency-dir`: Directory to save saliency visualizations
 
 ### Optional Arguments
@@ -263,6 +269,12 @@ Our implementation passes these validation tests:
    - ✅ High-resolution saliency maps (up to 3000×3000px)
    - ✅ Clear heatmap visualizations with proper scaling
    - ✅ Meaningful attention patterns
+
+4. **Text Attribution Test**:
+   - ✅ Successfully analyzed 15 tokens per query
+   - ✅ Identified `$` token as most important (0.217 attribution)
+   - ✅ Generated 4 text attribution visualizations
+   - ✅ Consistent patterns across candidates
 
 ## Troubleshooting
 

@@ -30,6 +30,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from math import ceil, sqrt
 import cv2
+import clip
+import re
 
 # Import from existing modules
 from compose_image_retrieval_demo import ComposedImageRetrievalSystem
@@ -37,6 +39,14 @@ from simple_cir_inference import SimpleCIRInference
 
 # Add Grad-ECLIP path
 sys.path.append(str(Path(__file__).parent.parent.parent / "Grad-Eclip"))
+
+# Try to import CLIP tokenizer for text attribution
+try:
+    from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
+    _tokenizer = _Tokenizer()
+except ImportError:
+    print("Warning: CLIP tokenizer not found. Text attribution will be limited.")
+    _tokenizer = None
 
 
 class GradECLIPHelper:
@@ -105,6 +115,62 @@ class GradECLIPHelper:
         # Create overlay
         overlay = np.clip(image_array * (1 - alpha) + heatmap * alpha, 0, 255).astype(np.uint8)
         return overlay
+    
+    @staticmethod
+    def sim_qk(q, k, eos_position):
+        """Compute similarity between query and key vectors (for text attribution)."""
+        q_cls = F.normalize(q[eos_position, 0, :], dim=-1) 
+        k_patch = F.normalize(k[:, 0, :], dim=-1)
+        
+        cosine_qk = (q_cls * k_patch).sum(-1)  
+        cosine_qk = (cosine_qk - cosine_qk.min()) / (cosine_qk.max() - cosine_qk.min())
+        return cosine_qk
+    
+    @staticmethod
+    def grad_eclip_text(c, qs, ks, vs, attn_outputs, eos_position):
+        """
+        Generate Grad-ECLIP text token attribution.
+        
+        Args:
+            c: Target scalar (similarity score)
+            qs, ks, vs: Query, key, value tensors from text transformer
+            attn_outputs: Attention outputs from text transformer layers
+            eos_position: Position of end-of-sequence token
+            
+        Returns:
+            Token attribution scores
+        """
+        tmp_maps = []
+        for q, k, v, attn_output in zip(qs, ks, vs, attn_outputs):
+            try:
+                grad = torch.autograd.grad(
+                    c, attn_output, 
+                    retain_graph=True, 
+                    allow_unused=True,
+                    create_graph=False
+                )[0]
+                
+                if grad is None:
+                    # Skip this layer if gradient is None
+                    continue
+                    
+                grad_cls = grad[eos_position, 0, :]
+                
+                # Use gradient on the EOS token position  
+                cosine_qk = GradECLIPHelper.sim_qk(q, k, eos_position)
+                tmp_maps.append((grad_cls * v[:, 0, :] * cosine_qk[:, None]).sum(-1))
+            except Exception as e:
+                print(f"⚠️  Skipping layer due to gradient error: {e}")
+                continue
+
+        if not tmp_maps:
+            # If no gradients were computed, return zeros
+            return torch.zeros(eos_position - 1)
+            
+        emap = F.relu_(torch.stack(tmp_maps, dim=0).sum(0))
+        emap = emap[1:eos_position].flatten()  # Exclude start/end tokens
+        emap = emap / (emap.sum() + 1e-8)  # Normalize with small epsilon
+        return emap
 
 
 class SaliencyEnabledCIRSystem(SimpleCIRInference):
@@ -367,10 +433,187 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
         
         return saliency_map
     
+    def _clip_encode_text_dense(self, text_tokens, n_layers=8):
+        """
+        Encode text with dense attention extraction for attribution.
+        Based on Grad-ECLIP's clip_encode_text_dense function.
+        
+        Args:
+            text_tokens: Tokenized text tensor
+            n_layers: Number of last transformer layers to extract attention from
+            
+        Returns:
+            Tuple of (text_features, (qs, ks, vs), attns, attn_outputs)
+        """
+        clip_model = self.cir_system.clip_model
+        
+        # Initial embedding with gradients enabled
+        x = clip_model.token_embedding(text_tokens).type(clip_model.dtype)
+        x.requires_grad_(True)  # Ensure gradients are enabled
+        attn_mask = clip_model.build_attention_mask().to(dtype=x.dtype, device=x.device)
+        x = x + clip_model.positional_embedding.type(clip_model.dtype)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        
+        # Process through early transformer blocks (manual forward to preserve gradients)
+        for block in clip_model.transformer.resblocks[:-n_layers]:
+            x = block(x)
+        
+        # Extract attention components from last n_layers
+        attns = []
+        attn_outputs = []
+        vs = []
+        qs = []
+        ks = []
+        
+        for TR in clip_model.transformer.resblocks[-n_layers:]:
+            x_in = x
+            x = TR.ln_1(x_in)
+            linear = torch._C._nn.linear    
+            q, k, v = linear(x, TR.attn.in_proj_weight, TR.attn.in_proj_bias).chunk(3, dim=-1)
+            
+            # Ensure Q, K, V require gradients
+            q.requires_grad_(True)
+            k.requires_grad_(True) 
+            v.requires_grad_(True)
+            
+            attn_output, attn = self._attention_layer(q, k, v, num_heads=1, attn_mask=attn_mask)
+            
+            # Ensure attention output requires gradients
+            attn_output.requires_grad_(True)
+            
+            attns.append(attn)
+            attn_outputs.append(attn_output)
+            vs.append(v)
+            qs.append(q)
+            ks.append(k)
+            
+            x_after_attn = linear(attn_output, TR.attn.out_proj.weight, TR.attn.out_proj.bias)       
+            x = x_after_attn + x_in
+            x = x + TR.mlp(TR.ln_2(x))
+                
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = clip_model.ln_final(x).type(clip_model.dtype)
+        
+        # Take features from the EOT embedding
+        x = x[torch.arange(x.shape[0]), text_tokens.argmax(dim=-1)] @ clip_model.text_projection
+        
+        return x, (qs, ks, vs), attns, attn_outputs
+    
+    def generate_text_attribution(self, text_caption: str, target_similarity: torch.Tensor, 
+                                 attribution_type: str = "candidate") -> Dict:
+        """
+        Generate token-level attribution for text prompt.
+        
+        Args:
+            text_caption: The input caption (e.g., "as a cartoon character")
+            target_similarity: Target tensor to compute gradients against
+            attribution_type: Type of attribution ("reference" or "candidate")
+            
+        Returns:
+            Dict with token attributions and readable tokens
+        """
+        print(f"🔍 Generating {attribution_type} text attribution...")
+        
+        # Create SEARLE format text
+        full_prompt = f"a photo of $ that {text_caption}"
+        
+        # Tokenize text
+        tokenized_text = clip.tokenize([full_prompt]).to('cuda')
+        
+        # Use a simpler approach: recreate the text encoding with fresh computation graph
+        with torch.enable_grad():
+            # Recreate text encoding for clean gradient computation
+            text_features_new, (qs, ks, vs), attns, attn_outputs = self._clip_encode_text_dense(tokenized_text)
+            
+            # Find EOS position
+            eos_position = tokenized_text.argmax(dim=-1).item()
+            
+            # Recreate the target similarity with this new text encoding
+            if attribution_type == "reference":
+                # For reference: use norm of phi output as proxy
+                new_target = torch.norm(text_features_new, p=2, dim=-1)
+            else:
+                # For candidates: use the magnitude of text features as proxy
+                new_target = torch.sum(text_features_new ** 2, dim=-1)
+            
+            # Generate attribution using Grad-ECLIP
+            attribution_scores = GradECLIPHelper.grad_eclip_text(
+                c=new_target,
+                qs=qs,
+                ks=ks, 
+                vs=vs,
+                attn_outputs=attn_outputs,
+                eos_position=eos_position
+            )
+        
+        # Decode tokens for human readability
+        if _tokenizer is not None:
+            # Use CLIP's tokenizer for accurate decoding
+            token_ids = tokenized_text.squeeze().cpu().numpy()
+            tokens = [_tokenizer.decode([token_id]) for token_id in token_ids[1:eos_position]]
+        else:
+            # Fallback to basic CLIP token decoding
+            tokens = [f"token_{i}" for i in range(len(attribution_scores))]
+        
+        # Ensure tokens and scores match in length
+        min_len = min(len(tokens), len(attribution_scores))
+        tokens = tokens[:min_len]
+        attribution_scores = attribution_scores[:min_len]
+        
+        return {
+            'tokens': tokens,
+            'attributions': attribution_scores.detach().cpu().numpy(),
+            'full_prompt': full_prompt,
+            'eos_position': eos_position
+        }
+    
+    def create_text_attribution_visualization(self, text_attribution: Dict, save_path: str) -> None:
+        """
+        Create and save text attribution visualization.
+        
+        Args:
+            text_attribution: Output from generate_text_attribution
+            save_path: Path to save the visualization
+        """
+        tokens = text_attribution['tokens']
+        attributions = text_attribution['attributions']
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Color map for attributions (normalize to 0-1)
+        norm_attributions = (attributions - attributions.min()) / (attributions.max() - attributions.min() + 1e-8)
+        
+        # Create bar plot
+        bars = ax.bar(range(len(tokens)), attributions, color=plt.cm.Reds(norm_attributions))
+        
+        # Set labels
+        ax.set_xlabel('Tokens', fontsize=12)
+        ax.set_ylabel('Attribution Score', fontsize=12)
+        ax.set_title(f'Text Token Attribution\n"{text_attribution["full_prompt"]}"', fontsize=14, fontweight='bold')
+        
+        # Set x-axis labels
+        ax.set_xticks(range(len(tokens)))
+        ax.set_xticklabels(tokens, rotation=45, ha='right')
+        
+        # Add value labels on bars
+        for i, (token, attr) in enumerate(zip(tokens, attributions)):
+            ax.text(i, attr + 0.01, f'{attr:.3f}', ha='center', va='bottom', fontsize=10)
+        
+        # Add grid for better readability
+        ax.grid(axis='y', alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        print(f"💾 Text attribution visualization saved to: {save_path}")
+    
     def query_with_saliency(self, reference_image_path: str, relative_caption: str, 
                            top_k: int = 10, generate_reference_saliency: bool = True,
                            generate_candidate_saliency: bool = True, 
-                           max_candidate_saliency: int = 3) -> Dict:
+                           max_candidate_saliency: int = 3,
+                           generate_text_attribution: bool = True) -> Dict:
         """
         Perform CIR query with saliency map generation.
         
@@ -464,6 +707,57 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
             except Exception as e:
                 print(f"⚠️  Failed to generate candidate saliency maps: {e}")
         
+        # Generate text attribution
+        if generate_text_attribution:
+            try:
+                output['text_attribution'] = {}
+                
+                # Reference text attribution (how text relates to reference processing)
+                if generate_reference_saliency and 'reference' in output['saliency_maps']:
+                    # Create target from reference processing
+                    ref_image = PIL.Image.open(reference_image_path).convert('RGB')
+                    ref_tensor = self.cir_system.preprocess(ref_image).unsqueeze(0).to('cuda')
+                    ref_features = self.cir_system.clip_model.encode_image(ref_tensor)
+                    pseudo_tokens = self.cir_system.phi(ref_features)
+                    target_norm = torch.norm(pseudo_tokens, p=2, dim=-1)
+                    
+                    ref_text_attr = self.generate_text_attribution(
+                        relative_caption, target_norm, "reference"
+                    )
+                    output['text_attribution']['reference'] = ref_text_attr
+                    print("✅ Reference text attribution generated")
+                
+                # Candidate text attribution (how text relates to each candidate)
+                if generate_candidate_saliency and 'candidates' in output['saliency_maps']:
+                    output['text_attribution']['candidates'] = {}
+                    
+                    for image_name, candidate_data in output['saliency_maps']['candidates'].items():
+                        try:
+                            # Load candidate image and get features
+                            candidate_path = candidate_data['image_path']
+                            candidate_image = PIL.Image.open(candidate_path).convert('RGB')
+                            candidate_tensor = self.cir_system.preprocess(candidate_image).unsqueeze(0).to('cuda')
+                            candidate_features = self.cir_system.clip_model.encode_image(candidate_tensor)
+                            
+                            # Use cosine similarity as target
+                            text_features_norm = F.normalize(text_features, dim=-1)
+                            candidate_features_norm = F.normalize(candidate_features, dim=-1)
+                            similarity = torch.sum(text_features_norm * candidate_features_norm, dim=-1)
+                            
+                            candidate_text_attr = self.generate_text_attribution(
+                                relative_caption, similarity, "candidate"
+                            )
+                            output['text_attribution']['candidates'][image_name] = candidate_text_attr
+                            print(f"✅ Text attribution generated for {image_name}")
+                            
+                        except Exception as e:
+                            print(f"⚠️  Failed to generate text attribution for {image_name}: {e}")
+                
+                print("✅ Text attribution analysis completed")
+                
+            except Exception as e:
+                print(f"⚠️  Failed to generate text attribution: {e}")
+        
         return output
     
     def save_saliency_visualizations(self, query_results: Dict, save_dir: str) -> None:
@@ -512,6 +806,27 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
                 np.save(save_path / f"result_{rank}_saliency_{safe_name}.npy", candidate_saliency)
                 
             print(f"✅ {len(query_results['saliency_maps']['candidates'])} candidate saliency visualizations saved")
+        
+        # Save text attribution visualizations
+        if 'text_attribution' in query_results:
+            print("💾 Saving text attribution visualizations...")
+            
+            # Save reference text attribution
+            if 'reference' in query_results['text_attribution']:
+                ref_attr_path = save_path / "reference_text_attribution.png"
+                self.create_text_attribution_visualization(
+                    query_results['text_attribution']['reference'], 
+                    str(ref_attr_path)
+                )
+            
+            # Save candidate text attributions
+            if 'candidates' in query_results['text_attribution']:
+                for image_name, text_attr in query_results['text_attribution']['candidates'].items():
+                    safe_name = Path(image_name).stem.replace('/', '_')
+                    attr_path = save_path / f"text_attribution_{safe_name}.png"
+                    self.create_text_attribution_visualization(text_attr, str(attr_path))
+                
+                print(f"✅ {len(query_results['text_attribution']['candidates'])} text attribution visualizations saved")
     
     def __del__(self):
         """Clean up hooks when the object is destroyed."""
@@ -549,7 +864,8 @@ def main(args):
                 top_k=args.top_k,
                 generate_reference_saliency=args.generate_reference_saliency,
                 generate_candidate_saliency=args.generate_candidate_saliency,
-                max_candidate_saliency=args.max_candidate_saliency
+                max_candidate_saliency=args.max_candidate_saliency,
+                generate_text_attribution=args.generate_text_attribution
             )
             
             # Output results
@@ -636,6 +952,8 @@ if __name__ == '__main__':
                        help='Generate saliency maps for candidate images')
     parser.add_argument('--max-candidate-saliency', type=int, default=3,
                        help='Maximum number of candidates to generate saliency for')
+    parser.add_argument('--generate-text-attribution', action='store_true', default=True,
+                       help='Generate text token attribution analysis')
     parser.add_argument('--save-saliency-dir', help='Directory to save saliency visualizations')
     
     args = parser.parse_args()

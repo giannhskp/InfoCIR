@@ -54,7 +54,8 @@ def main():
             top_k=config["top_k"],
             generate_reference_saliency=True,
             generate_candidate_saliency=True,
-            max_candidate_saliency=3
+            max_candidate_saliency=5,
+            generate_text_attribution=True
         )
         
         # Display results
@@ -81,6 +82,36 @@ def main():
         else:
             print(f"   ❌ Candidate saliency maps: None generated")
         
+        # Report text attribution generation
+        print(f"\n🔤 Text Attribution Analysis:")
+        if 'text_attribution' in query_results:
+            if 'reference' in query_results['text_attribution']:
+                ref_attr = query_results['text_attribution']['reference']
+                print(f"   ✅ Reference text attribution: {len(ref_attr['tokens'])} tokens analyzed")
+                # Show top attributed tokens
+                top_tokens = sorted(
+                    zip(ref_attr['tokens'], ref_attr['attributions']), 
+                    key=lambda x: x[1], reverse=True
+                )[:3]
+                print(f"      Top tokens: {[f'{token}({attr:.3f})' for token, attr in top_tokens]}")
+            else:
+                print(f"   ❌ Reference text attribution: Failed")
+                
+            if 'candidates' in query_results['text_attribution']:
+                num_candidates_attr = len(query_results['text_attribution']['candidates'])
+                print(f"   ✅ Candidate text attributions: {num_candidates_attr} generated")
+                for image_name, text_attr in query_results['text_attribution']['candidates'].items():
+                    # Show top attributed token for each candidate
+                    top_token = max(
+                        zip(text_attr['tokens'], text_attr['attributions']), 
+                        key=lambda x: x[1]
+                    )
+                    print(f"      - {Path(image_name).name}: Top token '{top_token[0]}' ({top_token[1]:.3f})")
+            else:
+                print(f"   ❌ Candidate text attributions: None generated")
+        else:
+            print(f"   ❌ Text attribution analysis: Not performed")
+        
         # Save saliency visualizations
         save_dir = "/home/ikapetan/Frameworks/Projects-Master/MMA/SEARLE/saliency_output"
         print(f"\n💾 Saving visualizations to: {save_dir}")
@@ -89,6 +120,10 @@ def main():
         
         print(f"\n🎉 Test completed successfully!")
         print(f"📁 Check the output directory: {save_dir}")
+        print(f"📊 Generated files include:")
+        print(f"   - Saliency heatmaps (.png) and raw data (.npy)")
+        print(f"   - Text attribution visualizations (.png)")
+        print(f"   - Reference and candidate analysis results")
         
     except Exception as e:
         print(f"❌ Error during test: {e}")
