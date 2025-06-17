@@ -97,11 +97,14 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
 
         print(f"Selected CIR model: {selected_model}")
 
-        with cir_systems.lock:
-            if selected_model == "freedom":
-                results = cir_systems.cir_system_freedom.query(tmp.name, text_prompt, top_n)
-            else:  # default to searle
-                results = cir_systems.cir_system_searle.query(tmp.name, text_prompt, top_n)
+        # Use saliency-enabled CIR query
+        from src.saliency import perform_cir_with_saliency, get_saliency_status_message
+        results, saliency_data = perform_cir_with_saliency(
+            temp_image_path=tmp.name,
+            text_prompt=text_prompt,
+            top_n=top_n,
+            selected_model=selected_model
+        )
 
         # Build result cards using paths from the loaded dataset
         cards = []
@@ -156,7 +159,14 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             rows.append(dbc.Row(cols, className='mb-3'))
 
         results_div = html.Div([html.H5("Retrieved Images", className="mb-3")] + rows)
-        status = html.Div([html.I(className="fas fa-check-circle text-success me-2"), f"Retrieved {len(cards)} images"], className="text-success small")
+        
+        # Create status message with saliency information
+        status_messages = [html.I(className="fas fa-check-circle text-success me-2"), f"Retrieved {len(cards)} images"]
+        saliency_status = get_saliency_status_message(saliency_data)
+        if saliency_status:
+            status_messages.extend([html.Br(), html.I(className="fas fa-brain text-info me-2"), saliency_status])
+        
+        status = html.Div(status_messages, className="text-success small")
         # Prepare store data for visualization
         # Map retrieved image names to DataFrame indices
         topk_ids = []
@@ -431,11 +441,18 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     sims = []
     ranks = []  # List to store the rank (position) of the selected image
     all_prompt_results = []
-    for p in prompts:
-        # Use the same query method as full CIR to get full results
-        full_prompt_results = cir_systems.cir_system_searle.query(tmp.name, p, search_data['top_n'])
-        all_prompt_results.append(full_prompt_results)
-        
+    
+    # Use saliency-enabled enhanced prompt processing
+    from src.saliency import perform_enhanced_prompt_cir_with_saliency
+    all_prompt_results, enhanced_saliency_data = perform_enhanced_prompt_cir_with_saliency(
+        temp_image_path=tmp.name,
+        enhanced_prompts=prompts,
+        top_n=search_data['top_n'],
+        selected_image_id=selected_image_id
+    )
+    
+    # Process results for scoring
+    for i, (p, full_prompt_results) in enumerate(zip(prompts, all_prompt_results)):
         # Find the similarity score for the ideal image in these results
         ideal_score = None
         position = None
@@ -465,10 +482,19 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     os.unlink(tmp.name)
 
     # Status message with icon
-    status = html.Div([
+    status_messages = [
         html.I(className="fas fa-magic text-success me-2"),
         "Enhanced prompt generated successfully! See analysis below."
-    ], className="text-success small mb-3")
+    ]
+    
+    # Add saliency status if available
+    if enhanced_saliency_data:
+        from src.saliency import get_saliency_status_message
+        enhanced_saliency_status = get_saliency_status_message(enhanced_saliency_data)
+        if enhanced_saliency_status:
+            status_messages.extend([html.Br(), html.I(className="fas fa-brain text-info me-2"), enhanced_saliency_status])
+    
+    status = html.Div(status_messages, className="text-success small mb-3")
 
     # Create enhanced table rows with highlighting for best prompt and action buttons
     table_rows = []

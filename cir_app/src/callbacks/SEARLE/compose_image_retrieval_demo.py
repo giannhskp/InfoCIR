@@ -117,13 +117,63 @@ class ComposedImageRetrievalSystem:
                     backbone = 'ViT-B/32'
                 else:  # searle-xl
                     backbone = 'ViT-L/14'
+                
+                try:
+                    # Try to use local cache first
+                    import os
+                    cache_dir = os.path.expanduser('~/.cache/torch/hub/miccunifi_SEARLE_main')
+                    if os.path.exists(cache_dir):
+                        print(f"🔍 Found cached SEARLE model at {cache_dir}")
+                        self.phi, _ = torch.hub.load(
+                            repo_or_dir='miccunifi/SEARLE', 
+                            model='searle', 
+                            source='github',
+                            backbone=backbone,
+                            force_reload=False
+                        )
+                    else:
+                        print("📥 Downloading SEARLE model from GitHub...")
+                        self.phi, _ = torch.hub.load(
+                            repo_or_dir='miccunifi/SEARLE', 
+                            model='searle', 
+                            source='github',
+                            backbone=backbone
+                        )
+                except Exception as e:
+                    print(f"⚠️  Failed to load SEARLE model: {e}")
+                    # Try to load from local hubconf if repo exists locally
+                    local_searle_path = None
+                    possible_paths = [
+                        "../SEARLE",
+                        "../../SEARLE", 
+                        "/home/ikapetan/Frameworks/Projects-Master/MMA/SEARLE"
+                    ]
                     
-                self.phi, _ = torch.hub.load(
-                    repo_or_dir='miccunifi/SEARLE', 
-                    model='searle', 
-                    source='github',
-                    backbone=backbone
-                )
+                    for path in possible_paths:
+                        if os.path.exists(path) and os.path.exists(os.path.join(path, 'hubconf.py')):
+                            local_searle_path = path
+                            break
+                    
+                    if local_searle_path:
+                        print(f"🔄 Using local SEARLE repository at {local_searle_path}")
+                        try:
+                            self.phi, _ = torch.hub.load(
+                                repo_or_dir=local_searle_path, 
+                                model='searle', 
+                                source='local',
+                                backbone=backbone
+                            )
+                        except Exception as e3:
+                            print(f"❌ Failed to load from local SEARLE: {e3}")
+                            raise e
+                    else:
+                        print("❌ No local SEARLE repository found and GitHub is unavailable")
+                        print("💡 This is likely a temporary network issue. Please:")
+                        print("   1. Check your internet connection")  
+                        print("   2. Try again in a few minutes")
+                        print("   3. Or clone SEARLE locally: git clone https://github.com/miccunifi/SEARLE.git")
+                        raise e
+                
                 self.phi = self.phi.to(device).eval()
                 
     def create_database(self, split: str = 'val'):

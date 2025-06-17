@@ -168,7 +168,7 @@ inference.save_saliency_visualizations(results, "output_dir")
 - `--generate-saliency`: Enable saliency map generation
 - `--generate-reference-saliency`: Generate reference image saliency (default: True)
 - `--generate-candidate-saliency`: Generate candidate saliency maps (default: True)  
-- `--max-candidate-saliency`: Max number of candidates to generate saliency for (default: 3)
+- `--max-candidate-saliency`: Max number of candidates to generate saliency for (default: 3, set to `None` for all top-k)
 - `--generate-text-attribution`: Generate text token attribution analysis (default: True)
 - `--save-saliency-dir`: Directory to save saliency visualizations
 

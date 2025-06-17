@@ -23,7 +23,7 @@ DEFAULT_PROJECTION = 'UMAP'
 PORT = 8051  # Port number for the Dash application
 
 # Dataset configuration
-DATASET_SAMPLE_SIZE = 30000  # Sample size from dataset
+DATASET_SAMPLE_SIZE = 1000  # Sample size from dataset
 
 # Path configuration
 # You should set DATASET_ROOT_PATH to point to your actual dataset directory
@@ -66,3 +66,11 @@ TOP_1_COLOR = 'red'
 CIR_FEATURES_PATH = WORK_DIR / 'features'  # Path to store CIR features
 CIR_LOAD_FEATURES = True  # Whether to load precomputed features or not
 CIR_FREEDOM_FEATURES_PATH = WORK_DIR / 'clip_features'  # Path for Freedom features
+
+# Saliency configuration
+SALIENCY_ENABLED = True  # Whether to generate saliency maps for CIR queries
+SALIENCY_OUTPUT_DIR = WORK_DIR / 'saliency_output'  # Directory to save saliency visualizations
+SALIENCY_MAX_CANDIDATES = None  # Maximum number of candidates to generate saliency maps for (set to None for all top-k)
+SALIENCY_GENERATE_REFERENCE = True  # Whether to generate reference image saliency
+SALIENCY_GENERATE_CANDIDATES = True  # Whether to generate candidate image saliency
+SALIENCY_GENERATE_TEXT_ATTRIBUTION = True  # Whether to generate text token attribution
