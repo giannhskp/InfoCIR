@@ -433,6 +433,60 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
         
         return saliency_map
     
+    def generate_reference_saliency_for_candidate(self, reference_image_path: str, candidate_features: torch.Tensor, relative_caption: str) -> np.ndarray:
+        """Generate a per-candidate saliency map on the reference image.
+
+        The map is obtained by back-propagating the *same* retrieval score that is
+        used for ranking (cosine of CLS_candidate and text features that include
+        φ(reference) as the `$` placeholder) all the way to the reference image.
+        """
+        # 1. Pre-process reference image and extract attention components (with grads)
+        ref_img = PIL.Image.open(reference_image_path).convert('RGB')
+        ref_tensor = self.cir_system.preprocess(ref_img).unsqueeze(0).to('cuda')
+
+        img_features, q_out, k_out, v_out, att_output, map_size = self._extract_attention_components(ref_tensor)
+
+        # CLS token features with gradient
+        cls_ref = img_features[:, 0, :]  # [1, D]
+
+        # 2. Compute pseudo-tokens via φ(reference) (keeps gradient path)
+        pseudo_tokens = self.cir_system.phi(cls_ref)
+
+        # 3. Build text features with `$` → pseudo_tokens
+        input_caption = f"a photo of $ that {relative_caption}"
+        text_inputs = clip.tokenize([input_caption]).to('cuda')
+        from encode_with_pseudo_tokens import encode_with_pseudo_tokens
+        text_features = encode_with_pseudo_tokens(
+            self.cir_system.clip_model, text_inputs, pseudo_tokens
+        )  # shape [1, D]
+
+        # 4. Compute similarity scalar with *candidate* features (no grad on candidate)
+        cand_norm = F.normalize(candidate_features.detach(), dim=-1)
+        text_norm = F.normalize(text_features, dim=-1)
+        similarity = torch.sum(cand_norm * text_norm, dim=-1)
+
+        # 5. Grad-ECLIP on reference image
+        saliency_map = GradECLIPHelper.grad_eclip(
+            c=similarity,
+            q_out=q_out,
+            k_out=k_out,
+            v=v_out,
+            att_output=att_output,
+            map_size=map_size,
+            withksim=True
+        )
+
+        saliency_map = GradECLIPHelper.normalize_saliency_map(saliency_map)
+        original_size = ref_img.size[::-1]
+        saliency_map = F.interpolate(
+            saliency_map.unsqueeze(0).unsqueeze(0),
+            size=original_size,
+            mode='bilinear',
+            align_corners=False
+        ).squeeze().cpu().numpy()
+
+        return saliency_map
+    
     def _clip_encode_text_dense(self, text_tokens, n_layers=8):
         """
         Encode text with dense attention extraction for attribution.
@@ -746,9 +800,22 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
                     
                     if candidate_path and Path(candidate_path).exists():
                         try:
+                            candidate_image = PIL.Image.open(candidate_path).convert('RGB')
+                            candidate_tensor = self.cir_system.preprocess(candidate_image).unsqueeze(0).to('cuda')
+
+                            # Candidate CLS features (no grad) for reference-side saliency
+                            candidate_features = self.cir_system.clip_model.encode_image(candidate_tensor).detach()
+
                             candidate_saliency = self.generate_candidate_saliency(candidate_path, text_features)
+                            # New: reference-side saliency conditioned on similarity
+                            reference_cond_saliency = self.generate_reference_saliency_for_candidate(
+                                reference_image_path,
+                                candidate_features=candidate_features,
+                                relative_caption=relative_caption
+                            )
                             output['saliency_maps']['candidates'][image_name] = {
                                 'saliency_map': candidate_saliency,
+                                'reference_saliency': reference_cond_saliency,
                                 'image_path': candidate_path,
                                 'rank': i + 1,
                                 'similarity_score': score
@@ -878,6 +945,16 @@ class SaliencyEnabledCIRSystem(SimpleCIRInference):
                 
                 PIL.Image.fromarray(overlay).save(save_path / f"result_{rank}_heatmap_{safe_name}.png")
                 np.save(save_path / f"result_{rank}_saliency_{safe_name}.npy", candidate_saliency)
+                
+                # ---- new: save reference-side saliency conditioned on this candidate ----
+                if 'reference_saliency' in candidate_data:
+                    ref_sal = candidate_data['reference_saliency']
+                    ref_image = PIL.Image.open(query_results['query']['reference_image']).convert('RGB')
+                    ref_array = np.array(ref_image)
+                    ref_overlay = GradECLIPHelper.create_heatmap_overlay(ref_array, ref_sal)
+
+                    PIL.Image.fromarray(ref_overlay).save(save_path / f"result_{rank}_ref_heatmap_{safe_name}.png")
+                    np.save(save_path / f"result_{rank}_ref_saliency_{safe_name}.npy", ref_sal)
                 
             print(f"✅ {len(query_results['saliency_maps']['candidates'])} candidate saliency visualizations saved")
         

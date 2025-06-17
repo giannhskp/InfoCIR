@@ -25,6 +25,32 @@ def main():
         "preprocess_type": "targetpad",
         "dataset_path": "/home/ikapetan/Frameworks/Projects-Master/MMA/data/imagenet-r",
     }
+
+    config = {
+        "database_path": "/home/ikapetan/Frameworks/Projects-Master/MMA/dbs/imagenet-r-database",
+        "reference_image": "/home/ikapetan/Frameworks/Projects-Master/MMA/SEARLE/src/example_scripts/green-apple-isolated-white.jpg",
+        # "caption": "a tree that produces this fruit",
+        "caption": "is on an arm tattoo",
+        "top_k": 10,
+        "clip_model_name": "ViT-B/32",
+        "eval_type": "searle",
+        "preprocess_type": "targetpad",
+        "dataset_path": "/home/ikapetan/Frameworks/Projects-Master/MMA/data/imagenet-r",
+        "save_dir": "/home/ikapetan/Frameworks/Projects-Master/MMA/SEARLE/saliency_output_apple_tattoo_test",
+    }
+
+    # config = {
+    #     "database_path": "/home/ikapetan/Frameworks/Projects-Master/MMA/dbs/imagenet-r-database",
+    #     "reference_image": "/home/ikapetan/Frameworks/Projects-Master/MMA/SEARLE/src/example_scripts/banana.jpg",
+    #     # "caption": "a tree that produces this fruit",
+    #     "caption": "is on an arm tattoo",
+    #     "top_k": 10,
+    #     "clip_model_name": "ViT-B/32",
+    #     "eval_type": "searle",
+    #     "preprocess_type": "targetpad",
+    #     "dataset_path": "/home/ikapetan/Frameworks/Projects-Master/MMA/data/imagenet-r",
+    #     "save_dir": "/home/ikapetan/Frameworks/Projects-Master/MMA/SEARLE/saliency_output_banana_tattoo",
+    # }
     
     print("🚀 Testing SEARLE CIR with Grad-ECLIP Saliency Maps...")
     print(f"Reference image: {config['reference_image']}")
@@ -113,7 +139,7 @@ def main():
             print(f"   ❌ Text attribution analysis: Not performed")
         
         # Save saliency visualizations
-        save_dir = "/home/ikapetan/Frameworks/Projects-Master/MMA/SEARLE/saliency_output"
+        save_dir = config["save_dir"]
         print(f"\n💾 Saving visualizations to: {save_dir}")
         
         inference.save_saliency_visualizations(query_results, save_dir)

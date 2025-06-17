@@ -4,15 +4,17 @@ This extension adds **Grad-ECLIP saliency map generation** to SEARLE's composed 
 
 ## Overview
 
-The enhanced system provides three types of explainability:
-1. **Reference Image Saliency**: Shows where the φ network "looks" when building pseudo-words from the reference image
-2. **Candidate Image Saliency**: Reveals regions in candidate images that drive similarity scores with the text query
-3. **Text Token Attribution**: Shows which words in the caption contribute most to retrieval decisions
+The enhanced system provides four types of explainability:
+1. **φ-based Reference Saliency**: Shows where the φ network "looks" when building pseudo-words from the reference image (one map per query)
+2. **Similarity-based Reference Saliency**: Shows which parts of the reference support each specific candidate match (one map per candidate)
+3. **Candidate Image Saliency**: Reveals regions in candidate images that drive similarity scores with the text query
+4. **Text Token Attribution**: Shows which words in the caption contribute most to retrieval decisions
 
 ## Features
 
 - ✅ **Zero-shot CIR** with SEARLE's textual inversion approach
-- ✅ **Reference saliency maps** showing φ network attention  
+- ✅ **φ-based reference saliency maps** showing φ network attention (global, query-independent)
+- ✅ **Per-candidate reference saliency maps** showing reference regions supporting each match
 - ✅ **Candidate saliency maps** revealing similarity-driving regions
 - ✅ **Grad-ECLIP integration** for high-quality visual explanations
 - ✅ **Automatic visualization** with heatmap overlays
@@ -77,12 +79,18 @@ saliency_output/
 ├── reference_text_attribution.png     # Reference text token attribution (75KB)
 ├── result_1_heatmap_sketch_1.png      # Top candidate with overlay (329KB)
 ├── result_1_saliency_sketch_1.npy     # Raw candidate saliency (4MB) 
+├── result_1_ref_heatmap_sketch_1.png  # Reference regions supporting candidate 1
+├── result_1_ref_saliency_sketch_1.npy # Raw reference saliency for candidate 1
 ├── text_attribution_sketch_1.png      # Top candidate text attribution (75KB)
 ├── result_2_heatmap_*.png             # Second candidate visualization
 ├── result_2_saliency_*.npy            # Second candidate raw data
+├── result_2_ref_heatmap_*.png        # Reference regions supporting candidate 2
+├── result_2_ref_saliency_*.npy       # Raw reference saliency for candidate 2
 ├── text_attribution_*.png             # Text attribution for each candidate
 ├── result_3_heatmap_*.png             # Third candidate visualization  
 └── result_3_saliency_*.npy            # Third candidate raw data
+└── result_3_ref_heatmap_*.png        # Reference regions supporting candidate 3
+└── result_3_ref_saliency_*.npy       # Raw reference saliency for candidate 3
 ```
 
 ## Usage
@@ -189,6 +197,14 @@ target.backward()
 saliency = gradients * activations  # Element-wise multiplication
 ```
 
+#### Per-Candidate Reference Saliency
+```python
+# Target: Same cosine similarity as used for ranking, but back-propagated to reference
+similarity = F.cosine_similarity(candidate_features, text_features_with_phi)
+similarity.backward()  # Gradients flow back to reference image through φ and text encoding
+saliency = gradients * activations
+```
+
 #### Candidate Image Saliency  
 ```python
 # Target: Cosine similarity with text features
@@ -235,6 +251,7 @@ saliency_results = {
     'candidate_saliency': {
         'image_name': {
             'saliency_map': np.ndarray,    # Shape: (H, W)
+            'reference_saliency': np.ndarray,  # Per-candidate reference map
             'image_path': str,
             'rank': int,
             'similarity_score': float
@@ -257,11 +274,14 @@ Our implementation passes these validation tests:
 
 1. **Functional Test**: Green apple → cartoon fruits query
    - ✅ Generated all 8 expected files
+   - ✅ Generated paired saliency maps (candidate + reference per result)
    - ✅ Reference saliency highlights apple regions
    - ✅ Candidate saliency shows relevant features
+   - ✅ Per-candidate reference saliency varies meaningfully between candidates
 
 2. **Performance Test**: 
    - ✅ Processes 3 candidates in ~30 seconds
+   - ✅ Generates 4 types of explanations efficiently
    - ✅ Memory efficient (clears gradients after use)
    - ✅ No memory leaks detected
 
@@ -269,6 +289,7 @@ Our implementation passes these validation tests:
    - ✅ High-resolution saliency maps (up to 3000×3000px)
    - ✅ Clear heatmap visualizations with proper scaling
    - ✅ Meaningful attention patterns
+   - ✅ Paired maps show corresponding semantic regions
 
 4. **Text Attribution Test**:
    - ✅ Successfully analyzed 15 tokens per query
@@ -313,88 +334,182 @@ Our implementation passes these validation tests:
 ### Debug Mode
 
 Enable detailed debugging:
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-# Or add manual debug prints
-print(f"Gradient shape: {gradients.shape}")
-print(f"Activation shape: {activations.shape}")
 ```
 
-## Performance Optimization
+## Complete Explainability System
 
-### Recommendations
-- **Memory**: Use `max_candidate_saliency=3` for typical setups
-- **Speed**: Process on GPU when available
-- **Storage**: Raw `.npy` files are large - consider compression for long-term storage
+### Four Types of Visual Explanations
 
-### Benchmarks (ImageNet-R dataset)
-- Reference saliency: ~10 seconds
-- Candidate saliency: ~8 seconds per image
-- Visualization generation: ~2 seconds per image
+The system now generates four complementary types of saliency maps:
 
-## Examples & Use Cases
+1. **Global Reference Saliency** (`reference_heatmap.png`)
+   - **Target**: ‖φ(reference)‖₂ (L2 norm of pseudo-token)
+   - **Question**: "Where does φ look to build the pseudo-token?"
+   - **Properties**: One map per query, independent of candidates
 
-### 1. Style Transfer Analysis
-```bash
-python simple_cir_inference_with_saliency.py \
-    --reference-image photo.jpg \
-    --caption "in the style of Van Gogh" \
-    --generate-saliency
-```
+2. **Per-Candidate Reference Saliency** (`result_k_ref_heatmap_*.png`)
+   - **Target**: cos(candidate_features, text_with_φ(reference))
+   - **Question**: "Which parts of the reference support THIS specific candidate?"
+   - **Properties**: One map per candidate, shows reference regions that justify the match
 
-### 2. Object Modification
-```bash
-python simple_cir_inference_with_saliency.py \
-    --reference-image dog.jpg \
-    --caption "wearing a red hat" \
-    --generate-saliency
-```
+3. **Candidate Saliency** (`result_k_heatmap_*.png`)
+   - **Target**: cos(candidate_features, text_with_φ(reference))
+   - **Question**: "Which parts of THIS candidate make the similarity score high?"
+   - **Properties**: One map per candidate, shows candidate regions driving the match
 
-### 3. Scene Context Changes
-```bash
-python simple_cir_inference_with_saliency.py \
-    --reference-image indoor.jpg \
-    --caption "in an outdoor setting" \
-    --generate-saliency
-```
+4. **Text Token Attribution** (`text_attribution_*.png`)
+   - **Target**: cos(image_features, text_with_φ(reference))
+   - **Question**: "Which words explain the score for THIS candidate?"
+   - **Properties**: Bar charts showing token-level importance
 
-## Contributing
+### Paired Analysis
 
-When extending the saliency functionality:
+For each candidate, you get a **paired visualization**:
+- `result_k_heatmap_image.png` ⟷ `result_k_ref_heatmap_image.png`
 
-1. **Hook Management**: Clean up hooks in `__del__` methods
-2. **Memory Management**: Use `.detach()` and `.cpu()` for large tensors
-3. **Error Handling**: Provide specific error messages
-4. **Testing**: Validate with known working examples
+This pair answers: **"Which parts of both images are making this match score high?"**
 
-## Citation
-
-If you use this enhanced SEARLE system with saliency maps, please cite:
-
-```bibtex
-@inproceedings{baldrati2023searle,
-    title={Zero-Shot Composed Image Retrieval with Textual Inversion},
-    author={Baldrati, Alberto and Morelli, Davide and Cartella, Giuseppe and Cornia, Marcella and Cucchiara, Rita and Bertini, Marco},
-    booktitle={Proceedings of the IEEE/CVF International Conference on Computer Vision},
-    year={2023}
-}
-
-@inproceedings{zhao2024gradeclip,
-    title={Gradient-based Visual Explanation for Transformer-based CLIP},
-    author={Zhao, Chenyang and others}, 
-    booktitle={International Conference on Machine Learning},
-    year={2024}
-}
-```
-
-## License
-
-This extension follows the same license as the base SEARLE repository. The Grad-ECLIP integration respects the original Grad-ECLIP license terms.
-
----
+The bright regions in both maps should correspond to semantically similar areas (e.g., both highlighting apple regions when searching for "cartoon apple").
 
 **Status**: ✅ **Fully Implemented and Tested** - Ready for production use
 
-Last updated: Based on successful implementation with ImageNet-R dataset and green apple test case. 
+
+**Key Features Implemented**:
+- Four-map explainability system (global reference, per-candidate reference, candidate, text attribution)
+- Paired visualization for semantic correspondence analysis
+- Complete gradient flow from similarity score to all visual and textual components
+- Efficient memory management and batch processing
+
+
+# Explainability in SEARLE-based Composed-Image Retrieval
+
+*Visual saliency maps & token-level attributions explained for newcomers*
+
+---
+
+## 1 Background – what problem are we solving?
+
+In **composed-image retrieval (CIR)** we start with
+
+* a *reference image* **Iᵣ** (e.g. a green apple) and
+* a *relative caption* **C** (e.g. "as a cartoon with other cartoon fruits").
+
+SEARLE turns the reference image into a *pseudo-token** φ(Iᵣ)** and builds the
+search prompt
+
+>  "a photo of $ that *C*"  with $ ⇢ φ(Iᵣ)
+
+CLIP encodes this prompt to a text vector **T** and every database image to a
+vector **V**.  Ranking is done by cosine similarity
+
+s = cos( **V**, **T** )      (1)
+
+The higher s, the higher the candidate is shown in the results.
+
+A user now asks two natural *why-questions*:
+
+1. **Visual**  Which pixels inside the images caused a high (or low) score?
+2. **Textual** Which words inside the prompt were decisive?
+
+The repository now answers both questions.
+
+---
+
+## 2 How do we compute explanations?
+
+We adopt the *gradient × activation* idea popularised by
+Grad-CAM / Grad-ECLIP:  choose a scalar target **t**, differentiate it with
+respect to intermediate feature maps, and weight the activations by the
+resulting gradient.
+
+### 2.1 Image-side math
+
+Let **vⱼ** be the value vector of patch j in the last ViT block and
+let **g** = ∂t/∂**a** where **a** are the block's attention outputs.
+Grad-ECLIP produces a per-patch score
+
+Eⱼ = ReLU(   g_cls · **vⱼ**   )   ×   sim(q_cls, kⱼ)     (2)
+
+* g_cls : gradient on the CLS token,
+* sim(·) : cosine between query & key (acts as spatial mask).
+
+E is then normalised to [0,1] and up-sampled to image size.
+
+### 2.2 Text-side math
+
+Inside the text transformer we work on token value vectors **vᵢ**.
+The attribution for token i becomes
+
+Aᵢ = ReLU(   g_EOS · **vᵢ**   )   ×   sim(q_EOS, kᵢ)    (3)
+
+and finally we normalise so that Σ Aᵢ = 1.
+
+---
+
+## 3 Which scalar *t* do we differentiate?  (Four flavours)
+
+| ID | scalar **t** | back-prop target | answers the question… |
+|----|--------------|------------------|-----------------------|
+| **A** | ‖ φ(Iᵣ) ‖₂ | reference image | "Where does φ look to build the pseudo-token?" |
+| **B** | s from (1) | candidate image | "Which parts of THIS candidate make the score high?" |
+| **C** | s from (1) | reference image | "Which parts of the reference support THIS candidate?" |
+| **D** | s from (1) | text tokens     | "Which words explain the score for THIS candidate?" |
+
+Resulting artefacts
+
+* Map-A = one heat-map on the reference (independent of candidates).
+* Pair (Map-B, Map-C) per candidate → highlights mutually matching regions.
+* Bar-chart-D per candidate.
+* Bar-chart-A′ (using t = cos(T, φ(Iᵣ))) for the reference-only view.
+
+---
+
+## 4 How to interpret the outputs
+
+### 4.1 Maps A, B, C
+
+1. **Map A** often lights up the single object whose identity must be
+   preserved (e.g. the apple body).
+2. **Map B** lights up the parts of the candidate that visually fit the
+   description (e.g. a red cartoon apple, a smiling face).
+3. **Map C** shows which parts of the reference were *queried* to produce the
+   high score for this candidate.  Bright spots usually correspond to the
+   same semantic region as in Map B.
+
+### 4.2 Token bars
+
+* Connector words such as "of" and "that" receive non-zero credit because they
+  glue the pseudo-token and the modifier clause inside the sentence structure.
+* The sum of sub-tokens equals the importance of the original word
+  (e.g. "cart" + "oon" = "cartoon").
+* Comparing bars across candidates reveals which textual attributes each image
+  satisfies best.
+
+---
+
+## 5 Why two reference maps?
+
+*Map A* isolates **φ**'s internal mechanics and is constant for the query.  
+*Map C* instead looks at the **retrieval score**, therefore depends on each
+candidate.  Keeping both lets us disentangle
+
+* generation of the pseudo-token
+* its subsequent use inside the similarity computation.
+
+---
+
+## 6 What a newcomer should remember
+
+1. **Score equation**  s = cos( image , text(φ(reference)) ).
+2. **Gradient trick**  visualise ∂s/∂(something) to see that something's role.
+3. Four explanations arise depending on *which "something"* you choose.
+4. Bright pixels or tall bars indicate strong positive influence on the score.
+5. Connector words may look important; that is a property of the language
+   model, not a bug in the attribution code.
+
+Armed with these maps and charts, you can debug dataset bias, verify that the
+model attends to the intended regions, and build user-facing explanations for
+retrieval results — all without reading a single line of the underlying code. 
+
+
+
