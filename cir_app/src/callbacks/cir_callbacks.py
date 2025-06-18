@@ -21,8 +21,6 @@ from dash import dcc
 import plotly.graph_objects as go
 from src.widgets import gallery, wordcloud, histogram, scatterplot
 
-from src.shared import cir_systems
-
 @callback(
     [Output('cir-upload-status', 'children'),
      Output('cir-query-preview', 'children'),
@@ -73,7 +71,8 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-toggle-button', 'style', allow_duplicate=True),
      Output('cir-run-button', 'style'),
      Output('cir-enhance-results', 'children', allow_duplicate=True),
-     Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True)],
+     Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
+     Output('saliency-data', 'data')],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'),
      State('cir-text-prompt', 'value'),
@@ -86,29 +85,36 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
         # Show Run CIR button, hide visualize button, clear enhance results and data
-        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None
+        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, None
     try:
+        print(f"Starting CIR search with model: {selected_model}, prompt: '{text_prompt}', top_n: {top_n}")
+        
         # Decode and save query image
         _, content_string = upload_contents.split(',')
         decoded = base64.b64decode(content_string)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
         tmp.write(decoded)
         tmp.close()
+        print(f"Query image saved to: {tmp.name}")
 
         print(f"Selected CIR model: {selected_model}")
 
         # Use saliency-enabled CIR query
         from src.saliency import perform_cir_with_saliency, get_saliency_status_message
+        print("Calling perform_cir_with_saliency...")
         results, saliency_data = perform_cir_with_saliency(
             temp_image_path=tmp.name,
             text_prompt=text_prompt,
             top_n=top_n,
             selected_model=selected_model
         )
+        print(f"CIR search completed. Got {len(results)} results")
 
         # Build result cards using paths from the loaded dataset
         cards = []
         df = Dataset.get()
+        print(f"Dataset has {len(df)} entries")
+        
         for card_index, (img_name, score) in enumerate(results):
             img_path = None
             try:
@@ -120,11 +126,19 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                 # Try string index lookup
                 if img_name in df.index:
                     img_path = df.loc[img_name]['image_path']
+            
             # Skip if path not found or doesn't exist
             if not img_path or not os.path.exists(img_path):
+                print(f"Warning: Could not find image path for {img_name}")
                 continue
-            data = open(img_path, 'rb').read()
-            src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
+                
+            # Load and encode image
+            try:
+                data = open(img_path, 'rb').read()
+                src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
+            except Exception as e:
+                print(f"Error loading image {img_path}: {e}")
+                continue
             
             # Create card body with score (like original CIR)
             card_body = dbc.CardBody([
@@ -152,6 +166,8 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                 )
             cards.append(card)
 
+        print(f"Created {len(cards)} result cards")
+
         rows = []
         for i in range(0, len(cards), 5):
             chunk = cards[i:i+5]
@@ -167,7 +183,15 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             status_messages.extend([html.Br(), html.I(className="fas fa-brain text-info me-2"), saliency_status])
         
         status = html.Div(status_messages, className="text-success small")
-        # Prepare store data for visualization
+        
+        # Reduce saliency data to a lightweight summary (only save_directory) to avoid large JSON payloads
+        saliency_summary = None
+        if saliency_data and isinstance(saliency_data, dict):
+            save_dir = saliency_data.get('save_directory')
+            if save_dir:
+                saliency_summary = {'save_directory': save_dir}
+        
+        # Prepare store data for visualization - simplified version
         # Map retrieved image names to DataFrame indices
         topk_ids = []
         for img_name, _ in results:
@@ -179,66 +203,35 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                 if img_name in df.index:
                     topk_ids.append(img_name)
         top1_id = topk_ids[0] if topk_ids else None
-        # Compute query embedding and normalize
-        device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
-        query_img = Image.open(tmp.name).convert('RGB')
-        query_input = cir_systems.cir_system_searle.preprocess(query_img).unsqueeze(0).to(device_model)
-        with torch.no_grad():
-            feat = cir_systems.cir_system_searle.clip_model.encode_image(query_input)
-            feat = F.normalize(feat.float(), dim=-1)
-        feat_np = feat.cpu().numpy()
-        
-        # Compute the final composed query embedding (image + text) used for actual search
-        with torch.no_grad():
-            if cir_systems.cir_system_searle.eval_type in ['phi', 'searle', 'searle-xl']:
-                # Use phi network to generate pseudo tokens
-                pseudo_tokens = cir_systems.cir_system_searle.phi(feat)
-                # Create text with pseudo token placeholder
-                input_caption = f"a photo of $ that {text_prompt}"
-                tokenized_caption = clip.tokenize([input_caption], context_length=77).to(device_model)
-                # Encode text with pseudo tokens - this is the final query embedding
-                from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
-                final_query_features = encode_with_pseudo_tokens(
-                    cir_systems.cir_system_searle.clip_model, tokenized_caption, pseudo_tokens
-                )
-                final_query_features = F.normalize(final_query_features)
-            else:
-                # For other eval types, use the reference image features as fallback
-                final_query_features = feat
-        
-        final_query_feat_np = final_query_features.cpu().numpy()
-        
-        # UMAP transform
-        umap_path = config.WORK_DIR / 'umap_reducer.pkl'
-        umap_reducer = pickle.load(open(str(umap_path), 'rb'))
-        umap_xy = umap_reducer.transform(feat_np)
-        umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
-        
-        # UMAP transform for final composed query
-        final_umap_xy = umap_reducer.transform(final_query_feat_np)
-        umap_x_final_query, umap_y_final_query = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
         
         # Delete temporary query image file
         os.unlink(tmp.name)
+        print("Temporary query image deleted")
+        
+        # Simplified store data - we'll compute embeddings later if needed for visualization
         store_data = {
             'topk_ids': topk_ids,
             'top1_id': top1_id,
-            'umap_x_query': umap_x_query,
-            'umap_y_query': umap_y_query,
-            'umap_x_final_query': umap_x_final_query,
-            'umap_y_final_query': umap_y_final_query,
-            'tsne_x_query': None,  # Not used since Query is only shown for UMAP
-            'tsne_y_query': None,  # Not used since Query is only shown for UMAP
-            'upload_contents': upload_contents,
+            'umap_x_query': None,  # Will be computed when visualization is enabled
+            'umap_y_query': None,
+            'umap_x_final_query': None,
+            'umap_y_final_query': None,
+            'tsne_x_query': None,
+            'tsne_y_query': None,
             'text_prompt': text_prompt,
             'top_n': top_n
         }
+        
+        print("CIR search callback completed successfully")
         # Show visualize button, hide Run CIR, clear enhance data
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None
+        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, saliency_summary
     except Exception as e:
+        print(f"CIR search error: {e}")
+        import traceback
+        traceback.print_exc()
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
         # On error, hide visualize button, show Run CIR, clear enhance results and data
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, None
 
 # Button toggle callback for CIR visualization
 @callback(

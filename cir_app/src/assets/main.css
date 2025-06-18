@@ -205,3 +205,29 @@ html, body {
 #tab-prompt-enhancement .prompt-cards-container > div {
     width: 100%;
 } 
+
+/* Saliency tab styling */
+#tab-saliency {
+    height: 100%;
+}
+
+.saliency-image-container {
+    transition: all 0.3s ease-in-out;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.saliency-image-container:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.saliency-navigation-controls {
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.saliency-pair-container {
+    min-height: 450px;
+} 

@@ -20,6 +20,7 @@ import src.callbacks.gallery
 import src.callbacks.deselect_button
 import src.callbacks.help_button
 import src.callbacks.cir_callbacks
+import src.callbacks.saliency_callbacks
 
 def run_ui():
     """Run the Dash UI application"""
@@ -42,6 +43,34 @@ def run_ui():
             dcc.Tab(label='wordcloud', value='wordcloud', id='tab-wordcloud', children=wordcloud_widget),
             dcc.Tab(label='images', value='images', id='tab-images', children=gallery_widget),
             dcc.Tab(label='histogram', value='histogram', id='tab-histogram', children=histogram_widget),
+            dcc.Tab(label='saliency', value='saliency', id='tab-saliency', children=[
+                html.Div([
+                    # Main content area
+                    html.Div(id='saliency-content', children=[
+                        html.Div([
+                            html.I(className="fas fa-brain text-info me-2"),
+                            html.H5("Saliency Maps", className="d-inline"),
+                            html.P("No saliency data available. Run a CIR query with SEARLE to generate saliency maps.", 
+                                   className="text-muted mt-2")
+                        ], className="text-center p-4")
+                    ], style={'flex': '1 1 auto', 'overflow': 'hidden'}),
+                    
+                    # Navigation controls at bottom
+                    html.Div(id='saliency-navigation', children=[
+                        html.Div([
+                            dbc.Button([html.I(className="fas fa-chevron-left me-1"), "Previous"], 
+                                       id='saliency-prev-btn', color='outline-primary', size='sm', disabled=True),
+                            html.Span(id='saliency-current-info', className='mx-3 text-muted small fw-bold'),
+                            dbc.Button(["Next ", html.I(className="fas fa-chevron-right ms-1")], 
+                                       id='saliency-next-btn', color='outline-primary', size='sm', disabled=True)
+                        ], className='d-flex align-items-center justify-content-center gap-2 saliency-navigation-controls p-3')
+                    ], style={'display': 'none'})
+                ], style={
+                    'display': 'flex',
+                    'flexDirection': 'column', 
+                    'height': '100%'
+                })
+            ]),
             dcc.Tab(label='prompt enhancement', value='prompt-enhancement', id='tab-prompt-enhancement', children=[
                 html.Div([
                     # Scrollable prompt cards container
@@ -209,7 +238,10 @@ def run_ui():
             # Store for the selected CIR result image ID to support prompt enhancement
             dcc.Store(id='cir-selected-image-id', data=None),
             # Store for enhanced prompts data and results
-            dcc.Store(id='cir-enhanced-prompts-data', data=None)
+            dcc.Store(id='cir-enhanced-prompts-data', data=None),
+            # Store for saliency data and current candidate index
+            dcc.Store(id='saliency-data', data=None),
+            dcc.Store(id='saliency-current-index', data=0)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )
