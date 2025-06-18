@@ -385,10 +385,10 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames):
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data')],
     Input('enhance-prompt-button', 'n_clicks'),
-    [State('cir-search-data', 'data'), State('cir-selected-image-id', 'data')],
+    [State('cir-search-data', 'data'), State('cir-selected-image-id', 'data'), State('saliency-data', 'data')],
     prevent_initial_call=True
 )
-def enhance_prompt(n_clicks, search_data, selected_image_id):
+def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
     """
     Enhance the user's prompt via a small LLM, compare each to the selected image, choose the best,
     rerun CIR with that prompt, and display diagnostics.
@@ -492,11 +492,17 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     
     # Use saliency-enabled enhanced prompt processing
     from src.saliency import perform_enhanced_prompt_cir_with_saliency
+    # Determine base directory for enhanced prompt saliency (inside initial query's directory if available)
+    base_saliency_dir = None
+    if isinstance(saliency_summary, dict):
+        base_saliency_dir = saliency_summary.get('save_directory')
+
     all_prompt_results, enhanced_saliency_data = perform_enhanced_prompt_cir_with_saliency(
         temp_image_path=tmp.name,
         enhanced_prompts=prompts,
         top_n=search_data['top_n'],
-        selected_image_id=selected_image_id
+        selected_image_id=selected_image_id,
+        base_save_dir=base_saliency_dir
     )
     
     # Process results for scoring

@@ -92,7 +92,8 @@ def perform_enhanced_prompt_cir_with_saliency(
     temp_image_path: str,
     enhanced_prompts: list,
     top_n: int,
-    selected_image_id: str
+    selected_image_id: str,
+    base_save_dir: Optional[str] = None
 ) -> Tuple[list, Optional[Dict]]:
     """
     Perform CIR queries for enhanced prompts with optional saliency generation.
@@ -102,25 +103,34 @@ def perform_enhanced_prompt_cir_with_saliency(
         enhanced_prompts: List of enhanced prompt strings
         top_n: Number of top results to return per prompt
         selected_image_id: ID of the selected target image
+        base_save_dir: Optional base directory for saving saliency data
     
     Returns:
         Tuple of (all_prompt_results, combined_saliency_data)
     """
-    all_prompt_results = []
-    combined_saliency_data = None
-    
-    # Process each enhanced prompt
+    # Prepare results containers
+    all_prompt_results: list = []  # retrieval results for every prompt
+    prompt_saliency_records: Dict[str, Dict] = {}  # prompt -> saliency metadata
+
+    # Determine base directory where enhanced prompt saliency will be stored
+    if base_save_dir is not None:
+        root_save_dir = Path(base_save_dir)
+    else:
+        # Fallback – create a new root directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        root_save_dir = config.SALIENCY_OUTPUT_DIR / f"enhanced_prompts_{timestamp}"
+
+    root_save_dir.mkdir(parents=True, exist_ok=True)
+
     for i, prompt in enumerate(enhanced_prompts):
+        # 1. Run retrieval for this prompt
         prompt_results = cir_systems.cir_system_searle.query(temp_image_path, prompt, top_n)
         all_prompt_results.append(prompt_results)
-        
-        # Generate saliency for the first few prompts if enabled
-        saliency_limit = config.SALIENCY_MAX_CANDIDATES if config.SALIENCY_MAX_CANDIDATES is not None else 3
-        if (config.SALIENCY_ENABLED and 
-            i < saliency_limit and  # Limit prompts to avoid too much computation
+
+        # 2. Generate saliency (full, same settings as initial query) if enabled
+        if (config.SALIENCY_ENABLED and
             cir_systems.saliency_manager is not None and
             hasattr(cir_systems.cir_system_searle, 'phi')):
-            
             try:
                 prompt_saliency_data = cir_systems.saliency_manager.query_with_saliency(
                     cir_system=cir_systems.cir_system_searle,
@@ -128,35 +138,34 @@ def perform_enhanced_prompt_cir_with_saliency(
                     relative_caption=prompt,
                     top_k=top_n,
                     dataset_path=config.DATASET_ROOT_PATH,
-                    generate_reference_saliency=False,  # Skip reference for enhanced prompts
-                    generate_candidate_saliency=True,
-                    max_candidate_saliency=1,  # Only generate for top candidate
-                    generate_text_attribution=False
+                    generate_reference_saliency=config.SALIENCY_GENERATE_REFERENCE,
+                    generate_candidate_saliency=config.SALIENCY_GENERATE_CANDIDATES,
+                    max_candidate_saliency=config.SALIENCY_MAX_CANDIDATES,
+                    generate_text_attribution=config.SALIENCY_GENERATE_TEXT_ATTRIBUTION
                 )
-                
-                # Store the first prompt's saliency data
-                if combined_saliency_data is None and prompt_saliency_data:
-                    combined_saliency_data = prompt_saliency_data
-                    
+
+                # 3. Save visualisations for this prompt in its own sub-directory
+                safe_prompt = "".join(c for c in prompt if c.isalnum() or c in (' ', '-', '_')).rstrip()[:30]
+                sub_dir = root_save_dir / f"prompt_{i+1}_{safe_prompt}"
+                cir_systems.saliency_manager.save_saliency_visualizations(prompt_saliency_data, str(sub_dir))
+
+                # Update saliency data with directory info
+                prompt_saliency_data['save_directory'] = str(sub_dir)
+
+                # Store record
+                prompt_saliency_records[prompt] = prompt_saliency_data
+
             except Exception as e:
                 print(f"⚠️ Failed to generate saliency for enhanced prompt {i+1}: {e}")
-    
-    # Save combined saliency data if available
-    if combined_saliency_data:
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            save_dir = config.SALIENCY_OUTPUT_DIR / f"enhanced_prompts_{timestamp}"
-            
-            cir_systems.saliency_manager.save_saliency_visualizations(
-                combined_saliency_data, str(save_dir)
-            )
-            
-            combined_saliency_data['save_directory'] = str(save_dir)
-            print(f"✅ Enhanced prompt saliency maps saved to: {save_dir}")
-            
-        except Exception as e:
-            print(f"⚠️ Failed to save enhanced prompt saliency: {e}")
-    
+
+    # Build combined object for downstream use
+    combined_saliency_data: Optional[Dict] = None
+    if prompt_saliency_records:
+        combined_saliency_data = {
+            'base_directory': str(root_save_dir),
+            'prompt_saliency': prompt_saliency_records
+        }
+
     return all_prompt_results, combined_saliency_data
 
 
@@ -170,6 +179,14 @@ def get_saliency_status_message(saliency_data: Optional[Dict]) -> str:
     Returns:
         Human-readable status message
     """
+    # New structure: if saliency_data contains enhanced prompt records
+    if saliency_data and 'prompt_saliency' in saliency_data:
+        num_prompts = len(saliency_data['prompt_saliency'])
+        base_dir = Path(saliency_data.get('base_directory', ''))
+        if num_prompts:
+            return f"Generated saliency for {num_prompts} enhanced prompt(s) → saved to {base_dir.name}"
+
+    # Original behaviour for single-query saliency
     if not saliency_data:
         if config.SALIENCY_ENABLED:
             # More specific error checking
