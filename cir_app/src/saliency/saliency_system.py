@@ -25,6 +25,7 @@ import numpy as np
 import cv2
 import clip
 import re
+import concurrent.futures  # Added for parallel saving
 
 
 class GradECLIPHelper:
@@ -949,7 +950,10 @@ class SaliencyManager:
         
         print(f"💾 Saving saliency visualizations to {save_path}")
         
-        # Save reference saliency
+        # ---------------------------------------------------------------
+        # 1. Pre-load reference image once to avoid redundant disk I/O
+        # ---------------------------------------------------------------
+        ref_array = None
         if 'reference' in query_results['saliency_maps']:
             ref_image = PIL.Image.open(query_results['query']['reference_image']).convert('RGB')
             ref_array = np.array(ref_image)
@@ -958,40 +962,50 @@ class SaliencyManager:
             # Create overlay
             overlay = GradECLIPHelper.create_heatmap_overlay(ref_array, ref_saliency)
             
-            # Save
-            PIL.Image.fromarray(overlay).save(save_path / "reference_heatmap.png")
-            np.save(save_path / "reference_saliency.npy", ref_saliency)
+            # Save with a faster PNG compression level (1 ≈ fastest, 9 ≈ slowest)
+            PIL.Image.fromarray(overlay).save(save_path / "reference_heatmap.png", compress_level=1)
+            # np.save(save_path / "reference_saliency.npy", ref_saliency)
             print("✅ Reference saliency visualization saved")
         
-        # Save candidate saliency maps
+        # -----------------------------------------------
+        # 2. Save candidate saliency maps in parallel
+        # -----------------------------------------------
         if 'candidates' in query_results['saliency_maps']:
-            for image_name, candidate_data in query_results['saliency_maps']['candidates'].items():
-                candidate_image = PIL.Image.open(candidate_data['image_path']).convert('RGB')
-                candidate_array = np.array(candidate_image)
-                candidate_saliency = candidate_data['saliency_map']
-                
-                # Create candidate overlay
-                overlay = GradECLIPHelper.create_heatmap_overlay(candidate_array, candidate_saliency)
-                
-                # Save with rank and similarity info
-                rank = candidate_data['rank']
-                score = candidate_data['similarity_score']
-                safe_name = Path(image_name).stem.replace('/', '_')
-                
-                PIL.Image.fromarray(overlay).save(save_path / f"result_{rank}_heatmap_{safe_name}.png")
-                np.save(save_path / f"result_{rank}_saliency_{safe_name}.npy", candidate_saliency)
-                
-                # Save per-candidate reference saliency if available
-                if 'reference_saliency' in candidate_data:
-                    ref_sal = candidate_data['reference_saliency']
-                    ref_image = PIL.Image.open(query_results['query']['reference_image']).convert('RGB')
-                    ref_array = np.array(ref_image)
-                    ref_overlay = GradECLIPHelper.create_heatmap_overlay(ref_array, ref_sal)
-
-                    PIL.Image.fromarray(ref_overlay).save(save_path / f"result_{rank}_ref_heatmap_{safe_name}.png")
-                    np.save(save_path / f"result_{rank}_ref_saliency_{safe_name}.npy", ref_sal)
-                
-            print(f"✅ {len(query_results['saliency_maps']['candidates'])} candidate saliency visualizations saved")
+            def _process_candidate(item):
+                """Inner helper to process a single candidate (runs in a thread)."""
+                image_name, candidate_data = item
+                try:
+                    candidate_image = PIL.Image.open(candidate_data['image_path']).convert('RGB')
+                    candidate_array = np.array(candidate_image)
+                    candidate_saliency = candidate_data['saliency_map']
+                    
+                    # Create candidate overlay
+                    overlay = GradECLIPHelper.create_heatmap_overlay(candidate_array, candidate_saliency)
+                    
+                    rank = candidate_data['rank']
+                    safe_name = Path(image_name).stem.replace('/', '_')
+                    
+                    # Save candidate heatmap
+                    PIL.Image.fromarray(overlay).save(
+                        save_path / f"result_{rank}_heatmap_{safe_name}.png", compress_level=1
+                    )
+                    
+                    # Optional: per-candidate reference saliency
+                    if 'reference_saliency' in candidate_data and ref_array is not None:
+                        ref_sal = candidate_data['reference_saliency']
+                        ref_overlay = GradECLIPHelper.create_heatmap_overlay(ref_array, ref_sal)
+                        PIL.Image.fromarray(ref_overlay).save(
+                            save_path / f"result_{rank}_ref_heatmap_{safe_name}.png", compress_level=1
+                        )
+                except Exception as e:
+                    print(f"⚠️  Failed to save visualization for {image_name}: {e}")
+            
+            candidates_items = list(query_results['saliency_maps']['candidates'].items())
+            max_workers = min(os.cpu_count() or 4, len(candidates_items))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                list(executor.map(_process_candidate, candidates_items))
+            
+            print(f"✅ {len(candidates_items)} candidate saliency visualizations saved")
         
         # Save text attribution visualizations
         if 'text_attribution' in query_results:

@@ -184,7 +184,7 @@ def get_saliency_status_message(saliency_data: Optional[Dict]) -> str:
         num_prompts = len(saliency_data['prompt_saliency'])
         base_dir = Path(saliency_data.get('base_directory', ''))
         if num_prompts:
-            return f"Generated saliency for {num_prompts} enhanced prompt(s) → saved to {base_dir.name}"
+            return f"Generated saliency for {num_prompts} enhanced prompt(s)"
 
     # Original behaviour for single-query saliency
     if not saliency_data:
