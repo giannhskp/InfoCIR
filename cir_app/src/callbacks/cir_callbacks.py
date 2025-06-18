@@ -20,6 +20,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from dash import dcc
 import plotly.graph_objects as go
 from src.widgets import gallery, wordcloud, histogram, scatterplot
+from src.callbacks.saliency_callbacks import load_and_resize_image  # Reuse efficient thumbnail loader
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -132,12 +133,14 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                 print(f"Warning: Could not find image path for {img_name}")
                 continue
                 
-            # Load and encode image
+            # Load and resize image efficiently (thumbnail ~150px, cached)
             try:
-                data = open(img_path, 'rb').read()
-                src = f"data:image/jpeg;base64,{base64.b64encode(data).decode()}"
+                src = load_and_resize_image(img_path, max_width=150, max_height=150)
+                if not src:
+                    print(f"Error: thumbnail generation returned None for {img_path}")
+                    continue
             except Exception as e:
-                print(f"Error loading image {img_path}: {e}")
+                print(f"Error thumbnailing {img_path}: {e}")
                 continue
             
             # Create card body with score (like original CIR)
