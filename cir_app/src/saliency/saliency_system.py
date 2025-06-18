@@ -26,6 +26,7 @@ import cv2
 import clip
 import re
 import concurrent.futures  # Added for parallel saving
+from functools import partial
 
 
 class GradECLIPHelper:
@@ -963,7 +964,7 @@ class SaliencyManager:
             overlay = GradECLIPHelper.create_heatmap_overlay(ref_array, ref_saliency)
             
             # Save with a faster PNG compression level (1 ≈ fastest, 9 ≈ slowest)
-            PIL.Image.fromarray(overlay).save(save_path / "reference_heatmap.png", compress_level=1)
+            _fast_write_image(overlay, save_path / "reference_heatmap.png", compression=1)
             # np.save(save_path / "reference_saliency.npy", ref_saliency)
             print("✅ Reference saliency visualization saved")
         
@@ -986,17 +987,17 @@ class SaliencyManager:
                     safe_name = Path(image_name).stem.replace('/', '_')
                     
                     # Save candidate heatmap
-                    PIL.Image.fromarray(overlay).save(
-                        save_path / f"result_{rank}_heatmap_{safe_name}.png", compress_level=1
+                    _fast_write_image(
+                        overlay,
+                        save_path / f"result_{rank}_heatmap_{safe_name}.png",
+                        compression=1,
                     )
                     
                     # Optional: per-candidate reference saliency
                     if 'reference_saliency' in candidate_data and ref_array is not None:
                         ref_sal = candidate_data['reference_saliency']
                         ref_overlay = GradECLIPHelper.create_heatmap_overlay(ref_array, ref_sal)
-                        PIL.Image.fromarray(ref_overlay).save(
-                            save_path / f"result_{rank}_ref_heatmap_{safe_name}.png", compress_level=1
-                        )
+                        _fast_write_image(ref_overlay, save_path / f"result_{rank}_ref_heatmap_{safe_name}.png", compression=1)
                 except Exception as e:
                     print(f"⚠️  Failed to save visualization for {image_name}: {e}")
             
@@ -1031,3 +1032,20 @@ class SaliencyManager:
     def __del__(self):
         """Clean up hooks when the object is destroyed."""
         self._clear_hooks() 
+
+# -----------------------------------------------------------------------------
+# Fast image writer (OpenCV is ~2-3× faster than Pillow for PNG/JPEG encoding)
+# -----------------------------------------------------------------------------
+
+def _fast_write_image(rgb_array: np.ndarray, out_path: Path, *, format: str = "png", compression: int = 1) -> None:
+    """Save an RGB uint8 numpy array to disk quickly using OpenCV."""
+    if format.lower() == "png":
+        # OpenCV expects BGR
+        bgr = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(str(out_path), bgr, [cv2.IMWRITE_PNG_COMPRESSION, compression])
+    elif format.lower() == "jpg" or format.lower() == "jpeg":
+        bgr = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(str(out_path), bgr, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    else:
+        # Fallback to Pillow if unsupported format
+        PIL.Image.fromarray(rgb_array).save(out_path) 

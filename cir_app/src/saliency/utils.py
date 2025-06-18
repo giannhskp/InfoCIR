@@ -213,6 +213,6 @@ def get_saliency_status_message(saliency_data: Optional[Dict]) -> str:
     
     if messages:
         save_dir = saliency_data.get('save_directory', 'unknown location')
-        return f"Generated {', '.join(messages)} → saved to {Path(save_dir).name}"
+        return f"Generated {', '.join(messages)}"
     else:
         return "No saliency maps generated" 
