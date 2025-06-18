@@ -646,14 +646,29 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
         ])
     ]
 
-    # Store data for enhanced prompts
+    # Build saliency directory list aligned with prompts
+    prompt_saliency_dirs = []
+    if enhanced_saliency_data and 'prompt_saliency' in enhanced_saliency_data:
+        mapping = enhanced_saliency_data['prompt_saliency']
+        for p in prompts:
+            entry = mapping.get(p)
+            prompt_saliency_dirs.append(entry.get('save_directory') if entry else None)
+    else:
+        prompt_saliency_dirs = [None] * len(prompts)
+
+    initial_saliency_dir = None
+    if isinstance(saliency_summary, dict):
+        initial_saliency_dir = saliency_summary.get('save_directory')
+
     enhanced_prompts_data = {
         'prompts': prompts,
         'similarities': sims,
         'positions': ranks,
         'all_results': all_prompt_results,
         'best_idx': best_idx,
-        'currently_viewing': best_idx  # Default to showing best prompt results
+        'currently_viewing': best_idx,  # Default to showing best prompt results
+        'prompt_saliency_dirs': prompt_saliency_dirs,
+        'initial_saliency_dir': initial_saliency_dir
     }
     
     return status, enhance_children, enhanced_prompts_data

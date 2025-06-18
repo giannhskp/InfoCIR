@@ -390,4 +390,42 @@ def navigate_saliency(prev_clicks, next_clicks, current_index, saliency_data):
 )
 def reset_saliency_index_on_new_data(saliency_data):
     """Reset the saliency index to 0 when new saliency data is loaded."""
-    return 0 
+    if saliency_data and saliency_data.get('save_directory'):
+        return 0
+    raise PreventUpdate
+
+
+# ------------------------------------------------------------
+# New callback: switch saliency maps when an enhanced prompt is selected
+# ------------------------------------------------------------
+
+@callback(
+    Output('saliency-data', 'data', allow_duplicate=True),
+    Input('prompt-selection', 'value'),
+    [State('cir-enhanced-prompts-data', 'data'), State('saliency-data', 'data')],
+    prevent_initial_call=True
+)
+def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_saliency):
+    """Update saliency-data to display maps for the selected enhanced prompt (or revert to original)."""
+    if enhanced_data is None:
+        raise PreventUpdate
+
+    # Determine directory to use
+    if selected_idx is None or selected_idx == -1:
+        dir_to_use = enhanced_data.get('initial_saliency_dir')
+    else:
+        dirs = enhanced_data.get('prompt_saliency_dirs', [])
+        if 0 <= selected_idx < len(dirs):
+            dir_to_use = dirs[selected_idx]
+        else:
+            dir_to_use = None
+
+    # Fallback to original if none found
+    if not dir_to_use:
+        dir_to_use = enhanced_data.get('initial_saliency_dir')
+
+    if not dir_to_use:
+        raise PreventUpdate
+
+    # When directory changes, reset current index to 0 via preprocessing chain
+    return {'save_directory': dir_to_use} 
