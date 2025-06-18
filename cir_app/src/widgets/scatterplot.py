@@ -73,27 +73,12 @@ def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
     if selected_x is None:
         return  # Selected image not found in data
     
-    # Remove selected image from CIR traces and track which trace it came from
-    selected_was_top1 = False
-    for trace in cir_traces:
-        if trace.get('name') == 'Top-K':
-            # Remove selected image from Top-K trace
-            new_x, new_y = [], []
-            for xi, yi in zip(trace['x'], trace['y']):
-                if not (abs(xi - selected_x) < 1e-10 and abs(yi - selected_y) < 1e-10):
-                    new_x.append(xi)
-                    new_y.append(yi)
-            trace['x'] = new_x
-            trace['y'] = new_y
-            
-        elif trace.get('name') == 'Top-1':
-            # Check if selected image is the Top-1 and remove it
-            if (len(trace['x']) == 1 and 
-                abs(trace['x'][0] - selected_x) < 1e-10 and 
-                abs(trace['y'][0] - selected_y) < 1e-10):
-                trace['x'] = []
-                trace['y'] = []
-                selected_was_top1 = True
+    # Keep points in their CIR traces; just overlay selected point.
+    selected_was_top1 = any(
+        trace.get('name') == 'Top-1' and len(trace['x']) == 1 and
+        abs(trace['x'][0]-selected_x)<1e-10 and abs(trace['y'][0]-selected_y)<1e-10
+        for trace in cir_traces
+    )
     
     # Rebuild scatterplot data with modified CIR traces
     scatterplot['data'] = [main_trace] + cir_traces + other_traces
