@@ -207,6 +207,57 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                     topk_ids.append(img_name)
         top1_id = topk_ids[0] if topk_ids else None
         
+        # ---------------------------------------------------------
+        # Compute UMAP coordinates for the Query and Final Query
+        # (very small payload: just 4 floats) so they can be plotted
+        # ---------------------------------------------------------
+        try:
+            from src.shared import cir_systems  # Local import to avoid circulars at top level
+            device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
+            from PIL import Image as PILImage
+            query_img = PILImage.open(tmp.name).convert('RGB')
+            query_input = cir_systems.cir_system_searle.preprocess(query_img).unsqueeze(0).to(device_model)
+            with torch.no_grad():
+                img_feat = cir_systems.cir_system_searle.clip_model.encode_image(query_input)
+                img_feat = F.normalize(img_feat.float(), dim=-1)
+            feat_np = img_feat.cpu().numpy()
+
+            # Compute final composed query embedding only for SEARLE models that have φ network
+            final_query_feat_np = None
+            if getattr(cir_systems.cir_system_searle, 'phi', None) is not None:
+                try:
+                    with torch.no_grad():
+                        pseudo_tokens = cir_systems.cir_system_searle.phi(img_feat)
+                        input_caption = f"a photo of $ that {text_prompt}"
+                        tokenized_caption = clip.tokenize([input_caption], context_length=77).to(device_model)
+                        from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
+                        final_q_feat = encode_with_pseudo_tokens(
+                            cir_systems.cir_system_searle.clip_model,
+                            tokenized_caption,
+                            pseudo_tokens
+                        )
+                        final_q_feat = F.normalize(final_q_feat)
+                    final_query_feat_np = final_q_feat.cpu().numpy()
+                except Exception as e:
+                    print(f"Warning: failed to compute final query features: {e}")
+
+            # UMAP transform
+            umap_path = config.WORK_DIR / 'umap_reducer.pkl'
+            if os.path.exists(umap_path):
+                umap_reducer = pickle.load(open(str(umap_path), 'rb'))
+                umap_xy = umap_reducer.transform(feat_np)
+                umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
+                if final_query_feat_np is not None:
+                    final_umap_xy = umap_reducer.transform(final_query_feat_np)
+                    umap_x_final_query, umap_y_final_query = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
+                else:
+                    umap_x_final_query = umap_y_final_query = None
+            else:
+                umap_x_query = umap_y_query = umap_x_final_query = umap_y_final_query = None
+        except Exception as e:
+            print(f"Warning: failed to compute query UMAP coords: {e}")
+            umap_x_query = umap_y_query = umap_x_final_query = umap_y_final_query = None
+
         # Delete temporary query image file
         os.unlink(tmp.name)
         print("Temporary query image deleted")
@@ -215,10 +266,10 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
         store_data = {
             'topk_ids': topk_ids,
             'top1_id': top1_id,
-            'umap_x_query': None,  # Will be computed when visualization is enabled
-            'umap_y_query': None,
-            'umap_x_final_query': None,
-            'umap_y_final_query': None,
+            'umap_x_query': umap_x_query,
+            'umap_y_query': umap_y_query,
+            'umap_x_final_query': umap_x_final_query,
+            'umap_y_final_query': umap_y_final_query,
             'tsne_x_query': None,
             'tsne_y_query': None,
             'text_prompt': text_prompt,
