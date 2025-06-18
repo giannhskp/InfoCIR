@@ -21,6 +21,7 @@ import src.callbacks.deselect_button
 import src.callbacks.help_button
 import src.callbacks.cir_callbacks
 import src.callbacks.saliency_callbacks
+import src.callbacks.rank_delta
 
 def run_ui():
     """Run the Dash UI application"""
@@ -87,6 +88,23 @@ def run_ui():
                     'flexDirection': 'column',
                     'height': '100%'
                 })
+            ]),
+            # NEW TAB: Rank-Δ matrix
+            dcc.Tab(label='rank-Δ', value='rank-delta', id='tab-rank-delta', children=[
+                html.Div(
+                    id='rank-delta-content',
+                    children=[
+                        html.Div(
+                            "Run prompt enhancement to view the rank-Δ matrix.",
+                            className="text-muted p-4"
+                        )
+                    ],
+                    style={
+                        'height': '100%',
+                        'overflowX': 'auto',
+                        'overflowY': 'auto'
+                    }
+                )
             ]),
         ]
     )

@@ -273,7 +273,8 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'tsne_x_query': None,
             'tsne_y_query': None,
             'text_prompt': text_prompt,
-            'top_n': top_n
+            'top_n': top_n,
+            'upload_contents': upload_contents,
         }
         
         print("CIR search callback completed successfully")
@@ -1001,6 +1002,8 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
         decoded = base64.b64decode(content_string)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
         tmp.write(decoded); tmp.close()
+        # Local import to avoid circular dependencies
+        from src.shared import cir_systems
         device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
         img = Image.open(tmp.name).convert('RGB')
         inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
