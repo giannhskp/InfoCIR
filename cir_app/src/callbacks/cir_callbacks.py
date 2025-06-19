@@ -21,10 +21,12 @@ from dash import dcc
 import plotly.graph_objects as go
 from src.widgets import gallery, wordcloud, histogram, scatterplot
 from src.callbacks.saliency_callbacks import load_and_resize_image  # Reuse efficient thumbnail loader
+from dash import no_update
+import copy
 
 @callback(
     [Output('cir-upload-status', 'children'),
-     Output('cir-query-preview', 'children'),
+     Output('cir-upload-preview', 'children'),
      Output('cir-search-button', 'disabled')],
     [Input('cir-upload-image', 'contents'),
      Input('cir-text-prompt', 'value')],
@@ -39,13 +41,12 @@ def update_upload_status(upload_contents, text_prompt, filename):
         decoded = base64.b64decode(content_string)
         img = Image.open(BytesIO(decoded))
         preview = html.Div([
-            html.H6("Query Image Preview:", className="mb-2"),
-            dbc.Card(dbc.CardBody([
-                html.Img(src=upload_contents, className="img-fluid", style={'max-width':'200px','max-height':'200px'}),
-                html.P(f"Filename: {filename}", className="small text-muted mt-2 mb-0"),
-                html.P(f"Size: {img.size[0]} x {img.size[1]}", className="small text-muted mb-0")
-            ]), style={'width': 'fit-content'})
-        ])
+            html.Div([
+                html.Img(src=upload_contents,
+                         style={'width':'40px','height':'40px','objectFit':'cover','borderRadius':'4px','border':'1px solid #ccc'}),
+                html.Span(f" {filename}", className="small text-muted ms-2")
+            ], className='d-flex align-items-center'),
+        ], style={'maxHeight':'50px','overflow':'hidden'})
         uploaded = html.Div([html.I(className="fas fa-check-circle text-success me-2"), "Image uploaded successfully"], className="text-success small")
         disabled = not (upload_contents and text_prompt and text_prompt.strip())
         return uploaded, preview, disabled
@@ -73,6 +74,8 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-run-button', 'style'),
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
+     Output('viz-mode', 'data', allow_duplicate=True),
+     Output('viz-selected-ids', 'data', allow_duplicate=True),
      Output('saliency-data', 'data')],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'),
@@ -85,11 +88,15 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
-        # Show Run CIR button, hide visualize button, clear enhance results and data
-        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, None
+        # Show Run CIR button, hide visualize button, clear enhance results and data, reset viz mode
+        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None
     try:
         print(f"Starting CIR search with model: {selected_model}, prompt: '{text_prompt}', top_n: {top_n}")
         
+        # Visualization mode is always OFF when a new search starts. Define it
+        # here so that subsequent card-building code can reference it safely.
+        viz_mode = False
+
         # Decode and save query image
         _, content_string = upload_contents.split(',')
         decoded = base64.b64decode(content_string)
@@ -143,41 +150,86 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                 print(f"Error thumbnailing {img_path}: {e}")
                 continue
             
-            # Create card body with score (like original CIR)
+            # Create card body with improved styling
             card_body = dbc.CardBody([
-                html.Img(src=src, className='img-fluid', style={'maxHeight':'150px','width':'auto'}),
-                html.P(f"Score: {score:.4f}", className='small text-center mt-1')
-            ])
+                html.Img(
+                    src=src, 
+                    className='img-fluid',
+                    style={
+                        'maxHeight': '120px',
+                        'width': '100%',
+                        'objectFit': 'cover',
+                        'borderRadius': '4px',
+                        'marginBottom': '8px'
+                    }
+                ),
+                html.Div([
+                    html.Small(
+                        f"{score:.3f}", 
+                        className='badge bg-primary',
+                        style={
+                            'fontSize': '0.65rem',
+                            'fontWeight': '500'
+                        }
+                    )
+                ], className='text-center')
+            ], style={'padding': '8px'})
             
-            # First image (top-1) is not clickable
+            # TOP-1 card behaviour differs between modes
             if card_index == 0:
-                inner_card = dbc.Card(card_body, className='result-card')
-                card = html.Div(
-                    [inner_card,
-                     html.Div("TOP-1", className='badge bg-warning position-absolute top-0 start-0 m-1')],
-                    className='result-card-wrapper position-relative',
-                    style={'cursor': 'default'}  # Override pointer cursor for first card
-                )
+                inner = dbc.Card(card_body, className="result-card", style={"border": "1px solid #dee2e6", "borderRadius": "6px", "height": "100%"})
+
+                if viz_mode:
+                    # Clickable wrapper (multi-select in visualization)
+                    wrapper = html.Div([
+                        inner,
+                        html.Div("TOP-1", className="badge bg-warning position-absolute top-0 start-0 m-1"),
+                    ], id={"type": "cir-result-card", "index": str(img_name)}, n_clicks=0,
+                    className="result-card-wrapper position-relative", style={"height": "100%"})
+                else:
+                    # Non-clickable in prompt-enhancement mode
+                    wrapper = html.Div([
+                        inner,
+                        html.Div("TOP-1", className="badge bg-warning position-absolute top-0 start-0 m-1"),
+                    ], className="result-card-wrapper position-relative", style={"cursor": "default", "height": "100%"})
             else:
                 # Other images are clickable
-                inner_card = dbc.Card(card_body, className='result-card')
+                inner_card = dbc.Card(
+                    card_body, 
+                    className='result-card',
+                    style={
+                        'border': '1px solid #dee2e6',
+                        'borderRadius': '6px',
+                        'height': '100%'
+                    }
+                )
                 card = html.Div(
                     inner_card,
                     id={'type': 'cir-result-card', 'index': img_name},
                     n_clicks=0,
-                    className='result-card-wrapper'
+                    className='result-card-wrapper',
+                    style={'height': '100%'}
                 )
-            cards.append(card)
+            if card_index == 0:
+                cards.append(wrapper)
+            else:
+                cards.append(card)
 
         print(f"Created {len(cards)} result cards")
 
         rows = []
-        for i in range(0, len(cards), 5):
-            chunk = cards[i:i+5]
-            cols = [dbc.Col(c, width=12//len(chunk)) for c in chunk]
-            rows.append(dbc.Row(cols, className='mb-3'))
+        for i in range(0, len(cards), 4):  # Changed from 5 to 4 cards per row for better spacing
+            chunk = cards[i:i+4]
+            cols = [dbc.Col(c, width=3, className='mb-3 px-2') for c in chunk]  # Fixed width and added padding
+            rows.append(dbc.Row(cols, className='g-2'))
 
-        results_div = html.Div([html.H5("Retrieved Images", className="mb-3")] + rows)
+        header = html.Div([
+            html.H5("Retrieved Images", className="mb-0", style={"display": "inline-block"}),
+            dbc.Button(id="visualize-toggle-button", size="sm", color="secondary", class_name="ms-2", n_clicks=0,
+                       children="Visualize OFF")
+        ], className="d-flex align-items-center mb-3")
+
+        results_div = html.Div([header] + rows)
         
         # Create status message with saliency information
         status_messages = [html.I(className="fas fa-check-circle text-success me-2"), f"Retrieved {len(cards)} images"]
@@ -275,18 +327,21 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'text_prompt': text_prompt,
             'top_n': top_n,
             'upload_contents': upload_contents,
+            # 🔒 Persist original retrieval results so that we can rebuild the cards later when
+            #    the user toggles between the baseline query and enhanced prompts.
+            'original_results': [[str(name), float(score)] for (name, score) in results],
         }
         
         print("CIR search callback completed successfully")
-        # Show visualize button, hide Run CIR, clear enhance data
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, saliency_summary
+        # Show visualize button, hide Run CIR, clear enhance data, reset viz mode to OFF
+        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, False, [], saliency_summary
     except Exception as e:
         print(f"CIR search error: {e}")
         import traceback
         traceback.print_exc()
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        # On error, hide visualize button, show Run CIR, clear enhance results and data
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, None
+        # On error, hide visualize button, show Run CIR, clear enhance results and data, reset viz mode
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None
 
 # Button toggle callback for CIR visualization
 @callback(
@@ -332,14 +387,19 @@ def update_enhance_button_state(wrapper_classnames):
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className'),
      Output('cir-selected-image-id', 'data')],
     Input({'type': 'cir-result-card', 'index': ALL}, 'n_clicks'),
-    [State({'type': 'cir-result-card', 'index': ALL}, 'className')],
+    [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
+     State('viz-mode', 'data')],
     prevent_initial_call=True
 )
-def toggle_cir_result_selection(n_clicks_list, current_classnames):
+def toggle_cir_result_selection(n_clicks_list, current_classnames, viz_mode):
     """
     Toggle selection highlight for CIR result cards, allowing only one selected at a time.
     Clicking the same card again will deselect it.
     """
+    # If visualization mode is ON, ignore prompt-enhancement selection logic
+    if viz_mode:
+        raise PreventUpdate
+
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -848,28 +908,49 @@ def populate_prompt_enhancement_tab(enhanced_data):
     cards = []
     for i, (prompt, sim) in enumerate(zip(prompts, sims)):
         is_best = (i == best_idx)
-        card_class = "mb-2 border-success" if is_best else "mb-2"
-        card_style = {'borderWidth': '2px', 'cursor': 'pointer'} if is_best else {'cursor': 'pointer'}
+        
+        # Card classes and styling
+        card_classes = "prompt-enhancement-card"
+        if is_best:
+            card_classes += " best-prompt"
+        
         icon_class = "fas fa-crown text-warning" if is_best else "fas fa-magic text-info"
-        title_class = "mb-1 fw-bold text-success" if is_best else "mb-1 fw-bold"
-        title_text = "Best Enhanced Prompt" if is_best else f"Enhanced Prompt {i+1}"
+        title_text = "Best" if is_best else f"#{i+1}"
+        
+        # Metrics badges with better styling
+        position_badge = html.Span(
+            str(positions[i]), 
+            className="prompt-metric-badge bg-primary text-white"
+        )
+        similarity_badge = html.Span(
+            f"{sim:.3f}", 
+            className="prompt-metric-badge bg-secondary text-white"
+        )
+        
         card = html.Div([
             dbc.Card([
                 dbc.CardBody([
+                    # Header with title and metrics on same line
                     html.Div([
-                        html.I(className=f"{icon_class} me-2", style={'fontSize': '1.1em'}),
-                        html.H6(title_text, className=title_class),
-                        html.P(f'"{prompt}"', className="font-monospace text-dark mb-1", style={'fontSize': '0.9em'}),
-                        html.Small([
-                            html.Span("Position: ", className="text-muted"),
-                            html.Span(str(positions[i]), className="badge bg-secondary ms-1"),
-                            html.Br(),
-                            html.Span("Similarity Score: ", className="text-muted"),
-                            html.Span(f"{sim:.4f}", className="badge bg-secondary ms-1")
-                        ])
-                    ])
-                ])
-            ], className=card_class, style=card_style)
+                        html.Div([
+                            html.I(className=f"{icon_class} prompt-card-icon"),
+                            html.Span(title_text, className="prompt-card-title")
+                        ], style={'display': 'flex', 'alignItems': 'center'}),
+                        html.Div([
+                            html.Span("Rank ", className="prompt-metric-label"),
+                            position_badge,
+                            html.Span(" Sim ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                            similarity_badge
+                        ], className="prompt-card-metrics")
+                    ], className="prompt-card-header"),
+                    
+                    # Prompt text with improved styling
+                    html.P(
+                        f'"{prompt}"', 
+                        className=f"prompt-card-text{' best-prompt' if is_best else ''}"
+                    )
+                ], className="prompt-card-body")
+            ], className=card_classes, style={'cursor': 'pointer'})
         ], id={'type': 'prompt-card', 'index': i}, n_clicks=0)
         cards.append(card)
     
@@ -878,9 +959,9 @@ def populate_prompt_enhancement_tab(enhanced_data):
     
     content = [
         html.Div([
-            html.I(className="fas fa-list-alt text-primary me-2"),
-            html.H5("Select Prompt Results to Visualize", className="text-primary mb-3")
-        ]),
+            html.I(className="fas fa-list-alt text-primary me-2", style={'fontSize': '0.9rem'}),
+            html.H6("Enhanced Prompts", className="text-primary mb-2", style={'fontSize': '0.85rem', 'display': 'inline'})
+        ], style={'marginBottom': '0.5rem'}),
         html.Div(cards, className="prompt-cards-container")
     ]
     
@@ -892,14 +973,19 @@ def populate_prompt_enhancement_tab(enhanced_data):
      Output({'type': 'prompt-card', 'index': ALL}, 'style')],
     Input({'type': 'prompt-card', 'index': ALL}, 'n_clicks'),
     [State('prompt-selection', 'value'),
-     State('cir-enhanced-prompts-data', 'data')],
+     State('cir-enhanced-prompts-data', 'data'),
+     State('viz-mode', 'data')],
     prevent_initial_call=True
 )
-def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data):
+def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, viz_mode):
     """Handle card clicks for prompt selection"""
     if not any(n_clicks_list) or not enhanced_data:
         raise PreventUpdate
     
+    # If visualization mode is ON, ignore prompt-enhancement selection logic
+    if viz_mode:
+        raise PreventUpdate
+
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -922,17 +1008,29 @@ def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data):
     positions = enhanced_data.get('positions', [])
     best_idx = enhanced_data.get('best_idx')
     card_styles = []
-    # Enhanced prompt cards styling
+    # Enhanced prompt cards styling with inline styles for selection states
     for i in range(len(prompts)):
         is_best = (i == best_idx)
         is_selected = (i == new_selected)
+        
+        # Base style (the CSS classes handle most styling)
+        style = {}
+        
+        # Add selection-specific inline styles to complement CSS
         if is_selected:
             if is_best:
-                style = {'backgroundColor': 'rgba(25, 135, 84, 0.1)', 'border': '2px solid #198754'}
+                style.update({
+                    'transform': 'translateY(-3px)',
+                    'boxShadow': '0 8px 20px rgba(40, 167, 69, 0.5)',
+                    'borderWidth': '3px'
+                })
             else:
-                style = {'backgroundColor': 'rgba(13, 202, 240, 0.1)', 'border': '2px solid #0dcaf0'}
-        else:
-            style = {}
+                style.update({
+                    'transform': 'translateY(-3px)', 
+                    'boxShadow': '0 8px 20px rgba(13, 202, 240, 0.5)',
+                    'borderWidth': '3px'
+                })
+        
         card_styles.append(style)
     return new_selected, card_styles
 
@@ -941,30 +1039,45 @@ def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data):
     Output({'type': 'prompt-card', 'index': ALL}, 'style', allow_duplicate=True),
     Input('prompt-selection', 'value'),
     State('cir-enhanced-prompts-data', 'data'),
+    State('viz-mode', 'data'),
     prevent_initial_call=True
 )
-def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data):
+def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data, viz_mode):
     """Update card styles when prompt-selection changes from external sources (like deselect button)"""
     if not enhanced_data:
         raise PreventUpdate
     
+    # If visualization mode is ON, ignore prompt-enhancement selection logic
+    if viz_mode:
+        raise PreventUpdate
+
     prompts = enhanced_data.get('prompts', [])
     positions = enhanced_data.get('positions', [])
     best_idx = enhanced_data.get('best_idx')
     card_styles = []
     
-    # Enhanced prompt cards styling
+    # Enhanced prompt cards styling with inline styles for selection states
     for i in range(len(prompts)):
         is_best = (i == best_idx)
         is_selected = (i == selected_idx)
         
+        # Base style (the CSS classes handle most styling)
+        style = {}
+        
+        # Add selection-specific inline styles to complement CSS
         if is_selected:
             if is_best:
-                style = {'backgroundColor': 'rgba(25, 135, 84, 0.1)', 'border': '2px solid #198754'}
+                style.update({
+                    'transform': 'translateY(-3px)',
+                    'boxShadow': '0 8px 20px rgba(40, 167, 69, 0.5)',
+                    'borderWidth': '3px'
+                })
             else:
-                style = {'backgroundColor': 'rgba(13, 202, 240, 0.1)', 'border': '2px solid #0dcaf0'}
-        else:
-            style = {}
+                style.update({
+                    'transform': 'translateY(-3px)', 
+                    'boxShadow': '0 8px 20px rgba(13, 202, 240, 0.5)',
+                    'borderWidth': '3px'
+                })
         
         card_styles.append(style)
     
@@ -983,10 +1096,11 @@ def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data):
      State('cir-search-data', 'data'),
      State('cir-toggle-state', 'data'),
      State('scatterplot', 'figure'),
-     State('selected-gallery-image-ids', 'data')],
+     State('selected-gallery-image-ids', 'data'),
+     State('viz-mode', 'data')],
     prevent_initial_call=True
 )
-def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data, cir_toggle_state, scatterplot_fig, selected_gallery_image_ids):
+def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data, cir_toggle_state, scatterplot_fig, selected_gallery_image_ids, viz_mode):
     """Update widgets for original or enhanced prompt selection, recomputing final query for enhanced and allowing revert."""
     if not cir_toggle_state or selected_idx is None or (enhanced_data is None and selected_idx != -1):
         raise PreventUpdate
@@ -1060,18 +1174,18 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     # Reset main trace colors to remove any previous highlighting from selected images/classes
     main['marker'] = {'color': config.SCATTERPLOT_COLOR}
     # Plot Top-K and Top-1
-    x1,y1,xk,yk = [],[],[],[]
+    x1, y1, xk, yk = [], [], [], []
     cmp1 = int(top1_id) if top1_id is not None else None
     cmpk = [int(i) for i in topk_ids]
     for xi, yi, val in zip(xs, ys, cds):
-        try: v = int(val)
-        except: v = val
-        if v==cmp1: x1.append(xi); y1.append(yi)
-        elif v in cmpk: xk.append(xi); yk.append(yi)
-    if xk:
-        scatterplot_fig['data'].append(go.Scatter(x=xk,y=yk,mode='markers',marker=dict(color=config.TOP_K_COLOR,size=7),name='Top-K').to_plotly_json())
-    if x1:
-        scatterplot_fig['data'].append(go.Scatter(x=x1,y=y1,mode='markers',marker=dict(color=config.TOP_1_COLOR,size=9),name='Top-1').to_plotly_json())
+        try:
+            v = int(val)
+        except Exception:
+            v = val
+        if v == cmp1:
+            x1.append(xi); y1.append(yi)
+        elif v in cmpk:
+            xk.append(xi); yk.append(yi)
     # Plot Query and Final Query
     if xq is not None:
         scatterplot_fig['data'].append(go.Scatter(x=[xq],y=[yq],mode='markers',marker=dict(color=config.QUERY_COLOR,size=12,symbol='star'),name='Query').to_plotly_json())
@@ -1097,6 +1211,8 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     Output('cir-toggle-button', 'color', allow_duplicate=True),
     Output('cir-toggle-button', 'style', allow_duplicate=True),
     Output('cir-toggle-state', 'data', allow_duplicate=True),
+    Output('viz-mode', 'data', allow_duplicate=True),
+    Output('viz-selected-ids', 'data', allow_duplicate=True),
     Output('cir-run-button', 'style', allow_duplicate=True),
     Input('custom-dropdown', 'value'),
     prevent_initial_call=True
@@ -1109,5 +1225,417 @@ def clear_results_on_model_change(_):
         'success',
         {'display': 'none', 'color': 'black'},
         False,
+        False,  # Reset viz-mode to OFF
+        [],     # Clear viz-selected-ids
         {'display': 'block', 'color': 'black'}
     )
+
+# -----------------------------------------------------------------------------
+# Helper – Re-use card–building logic for Query Results so it can be invoked by
+#           multiple callbacks (baseline query and enhanced prompt views).
+# -----------------------------------------------------------------------------
+
+# Helper now also receives viz_mode so that the Visualize toggle button is rendered
+# with the correct ON/OFF label and color each time the Results layout is rebuilt.
+def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mode: bool = False):
+    """Return a Dash HTML div containing the grid of result cards.
+
+    Parameters
+    ----------
+    result_tuples : list[(str,float)]
+        List of (image_id, similarity_score) pairs as produced by the CIR system.
+    """
+
+    df = Dataset.get()
+    from src.callbacks.saliency_callbacks import load_and_resize_image  # local import
+
+    cards = []
+    for idx, (img_name, score) in enumerate(result_tuples):
+        img_path = None
+        # Try numeric index first, then string
+        try:
+            int_idx = int(img_name)
+            if int_idx in df.index:
+                img_path = df.loc[int_idx]["image_path"]
+        except Exception:
+            if img_name in df.index:
+                img_path = df.loc[img_name]["image_path"]
+
+        if not img_path or not os.path.exists(img_path):
+            continue
+
+        # thumbnail (150×150 max)
+        try:
+            src = load_and_resize_image(img_path, max_width=150, max_height=150)
+            if not src:
+                continue
+        except Exception:
+            continue
+
+        card_body = dbc.CardBody([
+            html.Img(
+                src=src,
+                className="img-fluid",
+                style={
+                    "maxHeight": "120px",
+                    "width": "100%",
+                    "objectFit": "cover",
+                    "borderRadius": "4px",
+                    "marginBottom": "8px",
+                },
+            ),
+            html.Div([
+                html.Small(
+                    f"{score:.3f}",
+                    className="badge bg-primary",
+                    style={"fontSize": "0.65rem", "fontWeight": "500"},
+                )
+            ], className="text-center"),
+        ], style={"padding": "8px"})
+
+        # TOP-1 card behaviour differs between modes
+        if idx == 0:
+            inner = dbc.Card(card_body, className="result-card", style={"border": "1px solid #dee2e6", "borderRadius": "6px", "height": "100%"})
+
+            if viz_mode:
+                # Clickable wrapper (multi-select in visualization)
+                wrapper = html.Div([
+                    inner,
+                    html.Div("TOP-1", className="badge bg-warning position-absolute top-0 start-0 m-1"),
+                ], id={"type": "cir-result-card", "index": str(img_name)}, n_clicks=0,
+                className="result-card-wrapper position-relative", style={"height": "100%"})
+            else:
+                # Non-clickable in prompt-enhancement mode
+                wrapper = html.Div([
+                    inner,
+                    html.Div("TOP-1", className="badge bg-warning position-absolute top-0 start-0 m-1"),
+                ], className="result-card-wrapper position-relative", style={"cursor": "default", "height": "100%"})
+        else:
+            inner = dbc.Card(card_body, className="result-card", style={"border": "1px solid #dee2e6", "borderRadius": "6px", "height": "100%"})
+            if clickable:
+                # Include ID & n_clicks so that selection callbacks work
+                wrapper = html.Div(
+                    inner,
+                    id={"type": "cir-result-card", "index": str(img_name)},
+                    n_clicks=0,
+                    className="result-card-wrapper",
+                    style={"height": "100%"},
+                )
+            else:
+                # Non-interactive wrapper (no ID) for enhanced-prompt results
+                wrapper = html.Div(
+                    inner,
+                    className="result-card-wrapper",
+                    style={"height": "100%"},
+                )
+
+        cards.append(wrapper)
+
+    rows = []
+    for i in range(0, len(cards), 4):
+        chunk = cards[i : i + 4]
+        cols = [dbc.Col(c, width=3, className="mb-3 px-2") for c in chunk]
+        rows.append(dbc.Row(cols, className="g-2"))
+
+    # Visualize toggle reflects current viz_mode
+    btn_children = "Visualize ON" if viz_mode else "Visualize OFF"
+    btn_color = "success" if viz_mode else "secondary"
+
+    header = html.Div([
+        html.H5("Retrieved Images", className="mb-0", style={"display": "inline-block"}),
+        dbc.Button(id="visualize-toggle-button", size="sm", color=btn_color, class_name="ms-2", n_clicks=0,
+                   children=btn_children)
+    ], className="d-flex align-items-center mb-3")
+
+    return html.Div([header] + rows)
+
+
+# -----------------------------------------------------------------------------
+# Callback – switch Query Results when an enhanced prompt is selected / deselected
+# -----------------------------------------------------------------------------
+
+
+@callback(
+    [Output("cir-results", "children", allow_duplicate=True),
+     Output("enhance-prompt-button", "disabled", allow_duplicate=True),
+     Output("enhance-prompt-button", "color", allow_duplicate=True)],
+    Input("prompt-selection", "value"),
+    [State("cir-enhanced-prompts-data", "data"), State("cir-search-data", "data"), State("viz-mode", "data")],
+    prevent_initial_call=True,
+)
+def update_query_results_for_prompt_selection(selected_idx, enhanced_data, search_data, viz_mode):
+    """Render top-k images of the selected enhanced prompt (or original query).
+
+    • When *selected_idx* >= 0 we display the corresponding enhanced-prompt results
+      and disable the "Enhance prompt" button.
+    • When *selected_idx* == -1 we revert to the baseline query results and leave
+      the button state to other callbacks (so it can become enabled again once a
+      result card is picked).
+    """
+
+    if selected_idx is None or search_data is None:
+        raise PreventUpdate
+
+    # If enhanced prompt selected and we have data
+    if selected_idx >= 0 and enhanced_data is not None:
+        results_lists = enhanced_data.get("all_results", [])
+        if selected_idx >= len(results_lists):
+            raise PreventUpdate
+        results = results_lists[selected_idx]
+        # Non-TOP-1 images become clickable when visualization mode is ON so that
+        # they can be multi-selected on the scatterplot.
+        layout = _build_query_results_layout(results, clickable=viz_mode, viz_mode=viz_mode)
+        return layout, True, "secondary"
+
+    # Revert to original baseline query results when selected_idx == -1
+    if selected_idx == -1:
+        original_results = search_data.get("original_results")
+        if not original_results:
+            raise PreventUpdate
+        layout = _build_query_results_layout([(name, score) for name, score in original_results], clickable=True, viz_mode=viz_mode)
+        # Do **not** change enhance-prompt button state here – let other callbacks
+        # (image-selection) manage it. Hence we use no_update.
+        from dash import no_update
+        return layout, no_update, no_update
+
+    raise PreventUpdate
+
+# -----------------------------------------------------------------------------
+# Visualization mode toggle
+# -----------------------------------------------------------------------------
+
+@callback(
+    [Output('viz-mode', 'data'),
+     Output('visualize-toggle-button', 'children'),
+     Output('visualize-toggle-button', 'color'),
+     Output('cir-results', 'children', allow_duplicate=True)],
+    Input('visualize-toggle-button', 'n_clicks'),
+    [State('viz-mode', 'data'),
+     State('prompt-selection', 'value'),
+     State('cir-enhanced-prompts-data', 'data'),
+     State('cir-search-data', 'data')],
+    prevent_initial_call=True
+)
+def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, search_data):
+    """Toggle visualization mode ON/OFF."""
+    # Only toggle if we actually have a click (n_clicks > 0)
+    if n_clicks is None or n_clicks == 0:
+        # Initial state - keep current mode and set appropriate label
+        label = 'Visualize ON' if current_mode else 'Visualize OFF'
+        color = 'success' if current_mode else 'secondary'
+        from dash import no_update
+        return current_mode, label, color, no_update
+    
+    # Toggle the mode
+    new_mode = not current_mode
+    label = 'Visualize ON' if new_mode else 'Visualize OFF'
+    color = 'success' if new_mode else 'secondary'
+
+    # Rebuild Query Results layout with new viz_mode state
+    if search_data is None:
+        return new_mode, label, color, no_update
+
+    # Determine which results to show (baseline or selected enhanced prompt)
+    if selected_idx is not None and selected_idx >= 0 and enhanced_data is not None:
+        rs_lists = enhanced_data.get('all_results', [])
+        if selected_idx < len(rs_lists):
+            res = rs_lists[selected_idx]
+            # Enable clicking of non-TOP-1 cards only when visualization mode is ON
+            layout = _build_query_results_layout(res, clickable=new_mode, viz_mode=new_mode)
+        else:
+            layout = no_update
+    else:
+        orig = search_data.get('original_results')
+        if orig:
+            layout = _build_query_results_layout([(n, s) for n, s in orig], clickable=True, viz_mode=new_mode)
+        else:
+            layout = no_update
+
+    return new_mode, label, color, layout
+
+# -----------------------------------------------------------------------------
+# React to viz-mode changes – clear selections & update scatterplot when turning
+# OFF, and ensure button label stays in sync after layout rebuilds.
+# -----------------------------------------------------------------------------
+
+@callback(
+    [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
+     Output('viz-selected-ids', 'data', allow_duplicate=True),
+     Output('scatterplot', 'figure', allow_duplicate=True)],
+    Input('viz-mode', 'data'),
+    [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
+     State('viz-selected-ids', 'data'),
+     State('scatterplot', 'figure')],
+    prevent_initial_call=True
+)
+def handle_viz_mode_change(viz_mode, current_classnames, selected_ids, scatterplot_fig):
+    """When visualization mode is toggled OFF, clear selected ids, highlights,
+    and scatterplot traces. When toggled ON there is nothing to update here."""
+    from dash import no_update
+    if viz_mode:
+        # Turning ON – keep current selections/highlights
+        raise PreventUpdate
+
+    # Turning OFF – remove visual-selected class and clear scatterplot trace
+    new_classnames = []
+    for cls in current_classnames:
+        parts = cls.split()
+        if 'visual-selected' in parts:
+            parts.remove('visual-selected')
+        new_classnames.append(' '.join(parts))
+
+    import copy
+    fig = copy.deepcopy(scatterplot_fig)
+    # Remove Selected Images trace(s)
+    fig['data'] = [tr for tr in fig['data'] if tr.get('name') not in ['Selected Images']]
+
+    return new_classnames, [], fig
+
+# -----------------------------------------------------------------------------
+# Selection of images while Visualization mode is ON (multi-select capability)
+# -----------------------------------------------------------------------------
+
+@callback(
+    [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
+     Output('viz-selected-ids', 'data', allow_duplicate=True),
+     Output('scatterplot', 'figure', allow_duplicate=True)],
+    Input({'type': 'cir-result-card', 'index': ALL}, 'n_clicks'),
+    [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
+     State('viz-mode', 'data'),
+     State('viz-selected-ids', 'data'),
+     State('scatterplot', 'figure')],
+    prevent_initial_call=True
+)
+def select_images_for_visualization(n_clicks_list, current_classnames, viz_mode, selected_ids, scatterplot_fig):
+    """Handle multi-selection of result cards while visualization mode is ON."""
+    # Only act when visualization mode is active
+    if not viz_mode:
+        raise PreventUpdate
+
+    # If no card was actually clicked do nothing
+    if not any(n_clicks_list):
+        raise PreventUpdate
+
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    # Determine which card triggered the callback
+    triggered_id_raw = ctx.triggered[0]['prop_id'].split('.')[0]
+    try:
+        trig_dict = json.loads(triggered_id_raw)
+        clicked_id = str(trig_dict.get('index'))
+    except Exception:
+        # Should not happen
+        raise PreventUpdate
+
+    # Initialize list
+    selected_ids = selected_ids or []
+
+    # Toggle selection
+    if clicked_id in selected_ids:
+        selected_ids.remove(clicked_id)
+    else:
+        selected_ids.append(clicked_id)
+
+    # ---------------------------------------------------------------------
+    # Update className list – add/remove visual-selected class
+    # ---------------------------------------------------------------------
+    new_classnames = []
+    selected_set = set(selected_ids)
+    # Iterate over inputs to preserve order and access IDs directly
+    for input_dict, cls in zip(ctx.inputs_list[0], current_classnames):
+        wid = str(input_dict['id']['index'])
+        parts = cls.split()
+        if wid in selected_set and 'visual-selected' not in parts:
+            parts.append('visual-selected')
+        if wid not in selected_set and 'visual-selected' in parts:
+            parts.remove('visual-selected')
+        new_classnames.append(' '.join(parts))
+
+    # ---------------------------------------------------------------------
+    # Update scatterplot – remove previous Selected Images trace, then add
+    # new trace if there are selections.
+    # ---------------------------------------------------------------------
+    import copy
+    fig = copy.deepcopy(scatterplot_fig)
+    # Remove existing Selected Images trace(s)
+    fig['data'] = [tr for tr in fig['data'] if tr.get('name') != 'Selected Images']
+
+    if selected_ids:
+        main_trace = fig['data'][0]
+        xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
+        sel_x, sel_y = [], []
+        sel_set = set(selected_ids)
+        for xi, yi, cid in zip(xs, ys, cds):
+            if str(cid) in sel_set:
+                sel_x.append(xi)
+                sel_y.append(yi)
+
+        if sel_x:
+            sel_trace = go.Scatter(
+                x=sel_x,
+                y=sel_y,
+                mode='markers',
+                marker=dict(color=config.SELECTED_IMAGE_COLOR, size=9),
+                name='Selected Images'
+            )
+            fig['data'].append(sel_trace.to_plotly_json())
+
+    return new_classnames, selected_ids, fig
+
+# -----------------------------------------------------------------------------
+# Clear selections when the global "Visualize CIR results" / "Hide CIR results"
+# button is clicked while Visualization mode is currently ON.
+# -----------------------------------------------------------------------------
+
+@callback(
+    [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
+     Output('viz-selected-ids', 'data', allow_duplicate=True),
+     Output('scatterplot', 'figure', allow_duplicate=True)],
+    Input('cir-toggle-button', 'n_clicks'),
+    [State('viz-mode', 'data'),
+     State({'type': 'cir-result-card', 'index': ALL}, 'className'),
+     State('viz-selected-ids', 'data'),
+     State('scatterplot', 'figure')],
+    prevent_initial_call=True,
+)
+def clear_visual_selections_on_cir_toggle(n_clicks, viz_mode, current_classnames, selected_ids, scatterplot_fig):
+    """If visualization mode is ON and there are selected images, deselect them when
+    the user clicks the global CIR results visibility button (either direction).
+    This ensures that any previous highlight is cleared regardless of whether the
+    button is switching *into* or *out of* the visualization overlay.
+    """
+    from dash import no_update
+    import copy
+
+    # Coerce potential None values for robustness
+    current_classnames = current_classnames or []
+    selected_ids = selected_ids or []
+
+    # Only act when viz-mode is ON and there are selections.
+    if not viz_mode or not selected_ids:
+        # Nothing to clear → keep current state.
+        raise PreventUpdate
+
+    # ------------------------------------------------------------------
+    # Remove the "visual-selected" CSS class from all result-card wrappers
+    # ------------------------------------------------------------------
+    new_classnames = []
+    for cls in current_classnames:
+        parts = cls.split()
+        if 'visual-selected' in parts:
+            parts.remove('visual-selected')
+        new_classnames.append(' '.join(parts))
+
+    # -------------------------------------------------------------
+    # Strip the "Selected Images" trace from the scatterplot figure
+    # -------------------------------------------------------------
+    if scatterplot_fig is None:
+        new_fig = no_update
+    else:
+        new_fig = copy.deepcopy(scatterplot_fig)
+        new_fig['data'] = [tr for tr in new_fig['data'] if tr.get('name') != 'Selected Images']
+
+    # Return cleared selections and updated figure
+    return new_classnames, [], new_fig

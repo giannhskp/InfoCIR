@@ -194,21 +194,17 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state):
     if not cir_toggle_state:
         return ([
             html.Div([
-                html.I(className="fas fa-brain text-info me-2"),
-                html.H5("Saliency Maps", className="d-inline"),
-                html.P("Enable 'Visualize CIR results' to view saliency maps.", 
-                       className="text-muted mt-2")
-            ], className="text-center p-4")
+                html.I(className="fas fa-eye-slash text-muted me-2"),
+                html.Span("Enable visualization to view saliency", className="text-muted small")
+            ], className="text-center p-2")
         ], {'display': 'none'}, "", True, True)
     
     if not saliency_data or not saliency_data.get('save_directory'):
         return ([
             html.Div([
-                html.I(className="fas fa-brain text-info me-2"),
-                html.H5("Saliency Maps", className="d-inline"),
-                html.P("No saliency data available. Run a CIR query with SEARLE to generate saliency maps.", 
-                       className="text-muted mt-2")
-            ], className="text-center p-4")
+                html.I(className="fas fa-brain text-muted me-2"),
+                html.Span("No saliency data available", className="text-muted small")
+            ], className="text-center p-2")
         ], {'display': 'none'}, "", True, True)
     
     # Use cached pairs
@@ -218,12 +214,8 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state):
         return ([
             html.Div([
                 html.I(className="fas fa-exclamation-triangle text-warning me-2"),
-                html.H5("No Saliency Maps Found", className="d-inline"),
-                html.P("Saliency files were not found in the expected location.", 
-                       className="text-muted mt-2"),
-                html.Small(f"Searched in: {saliency_data['save_directory']}", 
-                          className="text-muted")
-            ], className="text-center p-4")
+                html.Span("No saliency maps found", className="text-muted small")
+            ], className="text-center p-2")
         ], {'display': 'none'}, "", True, True)
     
     # Ensure current_index is within bounds
@@ -237,97 +229,46 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state):
     
     # Load images with optimization
     try:
-        reference_src = load_and_resize_image(reference_path)
-        candidate_src = load_and_resize_image(candidate_path)
+        reference_src = load_and_resize_image(reference_path, max_width=150, max_height=150)
+        candidate_src = load_and_resize_image(candidate_path, max_width=150, max_height=150)
         
         if not reference_src or not candidate_src:
-            # If images fail to load, show error
+            # If images fail to load, show compact error
             content = [
                 html.Div([
                     html.I(className="fas fa-exclamation-triangle text-warning me-2"),
-                    html.H5("Error Loading Images", className="d-inline"),
-                    html.P("Could not load saliency images from disk.", 
-                           className="text-muted mt-2")
-                ], className="text-center p-4")
+                    html.Span("Error loading images", className="text-muted small")
+                ], className="text-center p-2")
             ]
         else:
-            # Create display content
+            # Create compact display content
             content = [
-                # Header
                 html.Div([
-                    html.H5([
-                        html.I(className="fas fa-brain text-info me-2"),
-                        f"Saliency Analysis - Rank {rank}"
-                    ], className="mb-3"),
-                    html.P([
-                        "Showing paired saliency maps for ",
-                        html.Code(image_name, className="bg-light px-1"),
-                        ". The reference saliency shows which parts of the reference image support this candidate match."
-                    ], className="text-muted small mb-4")
-                ]),
-                
-                # Image pair
-                html.Div([
-                    dbc.Row([
-                        # Reference saliency (similarity-based)
-                        dbc.Col([
+                    # Height-centered images (no rank badge here anymore)
+                    html.Div([
+                        # Reference image
+                        html.Div([
+                            html.Div("Reference", className="text-center text-primary fw-bold mb-1", style={'fontSize': '0.65rem'}),
                             html.Div([
-                                html.H6([
-                                    html.I(className="fas fa-search me-1 text-primary"),
-                                    "Reference Saliency"
-                                ], className="text-primary mb-2"),
-                                html.P("Which parts of the reference support this match", 
-                                       className="small text-muted mb-3"),
-                                html.Div([
-                                    html.Img(
-                                        src=reference_src,
-                                        style={
-                                            'width': '100%',
-                                            'height': 'auto',
-                                            'maxHeight': '350px',
-                                            'objectFit': 'contain'
-                                        }
-                                    )
-                                ], className="saliency-image-container", 
-                                   style={
-                                       'border': '2px solid #0d6efd',
-                                       'borderRadius': '8px',
-                                       'padding': '4px',
-                                       'backgroundColor': '#f8f9fa'
-                                   })
-                            ])
-                        ], width=6, className="mb-3"),
+                                html.Img(
+                                    src=reference_src,
+                                    className="saliency-compact-image"
+                                )
+                            ], className="saliency-compact-container reference-saliency")
+                        ], className="saliency-column"),
                         
-                        # Candidate saliency
-                        dbc.Col([
+                        # Candidate image  
+                        html.Div([
+                            html.Div("Candidate", className="text-center text-success fw-bold mb-1", style={'fontSize': '0.65rem'}),
                             html.Div([
-                                html.H6([
-                                    html.I(className="fas fa-eye me-1 text-success"),
-                                    "Candidate Saliency"
-                                ], className="text-success mb-2"),
-                                html.P("Which parts of this candidate drive the similarity", 
-                                       className="small text-muted mb-3"),
-                                html.Div([
-                                    html.Img(
-                                        src=candidate_src,
-                                        style={
-                                            'width': '100%',
-                                            'height': 'auto',
-                                            'maxHeight': '350px',
-                                            'objectFit': 'contain'
-                                        }
-                                    )
-                                ], className="saliency-image-container",
-                                   style={
-                                       'border': '2px solid #198754',
-                                       'borderRadius': '8px',
-                                       'padding': '4px',
-                                       'backgroundColor': '#f8f9fa'
-                                   })
-                            ])
-                        ], width=6, className="mb-3")
-                    ], className="g-3")
-                ], className="saliency-pair-container")
+                                html.Img(
+                                    src=candidate_src,
+                                    className="saliency-compact-image"
+                                )
+                            ], className="saliency-compact-container candidate-saliency")
+                        ], className="saliency-column")
+                    ], className="saliency-pair-row")
+                ], className="saliency-compact-content")
             ]
             
     except Exception as e:
@@ -335,13 +276,12 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state):
         content = [
             html.Div([
                 html.I(className="fas fa-exclamation-triangle text-warning me-2"),
-                html.H5("Error Processing Images", className="d-inline"),
-                html.P(f"Error: {str(e)}", className="text-muted mt-2")
-            ], className="text-center p-4")
+                html.Span("Processing error", className="text-muted small")
+            ], className="text-center p-2")
         ]
     
-    # Navigation info
-    nav_info = f"Showing {current_index + 1} of {len(pairs)}"
+    # Navigation info - only show rank
+    nav_info = f"Rank {rank}"
     
     # Navigation buttons state
     prev_disabled = current_index <= 0
@@ -428,4 +368,5 @@ def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_sal
         raise PreventUpdate
 
     # When directory changes, reset current index to 0 via preprocessing chain
+    return {'save_directory': dir_to_use} 
     return {'save_directory': dir_to_use} 
