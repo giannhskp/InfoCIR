@@ -7,7 +7,8 @@ from src.widgets import (
     scatterplot, 
     wordcloud, 
     histogram, 
-    help_popup
+    help_popup,
+    tokenbar
 )
 import dash_bootstrap_components as dbc
 
@@ -53,12 +54,16 @@ def run_ui():
                     }),
                     # Hidden radio for callback wiring
                     dcc.RadioItems(id='prompt-selection', options=[], value=None, style={'display': 'none'})
+                    # html.Div(id='token-bar', className='mt-3')
                 ], style={
                     'display': 'flex',
                     'flexDirection': 'column',
                     'height': '100%'
                 })
             ]),
+            dcc.Tab(label='token attribution', value='token-attribution', id='tab-token-attribution', children=[
+                html.Div(id='token-bar-tab-container', style={'padding': '1rem'})
+            ])
         ]
     )
 

@@ -267,6 +267,317 @@ class ComposedImageRetrievalSystem:
         print(f"Database loaded with {len(self.database_names)} images")
 
 
+    # def compute_token_attribution(
+    #     self,
+    #     reference_image,           # Tensor [1,3,H,W] | [3,H,W] | PIL.Image
+    #     relative_caption: str,
+    #     target_image,              # Tensor or PIL.Image
+    #     normalise: bool = True
+    # ) -> List[Tuple[str, float]]:
+    #     """
+    #     Grad×Input saliency for every prompt token + the IMAGE pseudo-token.
+
+    #     Returns
+    #     -------
+    #     List[(token, importance)] sorted - highest first.
+    #     """
+
+    #     # ---------- helper -------------------------------------------------
+    #     dev = next(self.clip_model.parameters()).device
+
+    #     def _to_tensor(img):
+    #         if isinstance(img, torch.Tensor):
+    #             if img.dim() == 3:           # CHW ➜ 1CHW
+    #                 img = img.unsqueeze(0)
+    #             return img.to(dev).float()
+    #         if isinstance(img, PIL.Image.Image):
+    #             return self.preprocess(img).unsqueeze(0).to(dev)
+    #         raise TypeError("Image must be a Tensor or PIL.Image")
+
+    #     # ------------------------------------------------------------------
+    #     ref_tensor = _to_tensor(reference_image)
+    #     tgt_tensor = _to_tensor(target_image)
+
+    #     print(f"Reference image shape: {ref_tensor.shape}, Target image shape: {tgt_tensor.shape}")
+
+    #     # 1) reference-image feature ➜ pseudo-token
+    #     with torch.no_grad():
+    #         ref_feat = self.clip_model.encode_image(ref_tensor)              # [1,D]
+    #         pseudo   = self.phi(ref_feat).squeeze(0)                         # [d_token]
+
+    #     print(f"Pseudo-token shape: {pseudo.shape}")
+
+    #     # 2) prompt with placeholder + tokenise
+    #     prompt  = f"a photo of $ that {relative_caption}"
+    #     tok_ids = clip.tokenize([prompt], context_length=77).to(dev)         # [1,77]
+        
+    #     print(f"Tokenized prompt shape: {tok_ids.shape}, Prompt: {prompt}")
+
+    #     placeholder_id = clip.tokenize(["$"])[0][1].item()
+    #     mask = (tok_ids == placeholder_id)                                   # [1,77] bool
+        
+    #     print(f"Placeholder token ID: {placeholder_id}, Mask shape: {mask.shape}")
+
+    #     # 3) embed tokens & substitute pseudo-word
+    #     emb = self.clip_model.token_embedding(tok_ids).clone()               # [1,77,d]
+    #     emb[mask] = pseudo
+    #     emb = emb.detach().requires_grad_(True)
+        
+    #     print(f"Token embeddings shape: {emb.shape}")
+
+    #     # 4) forward through text tower (replicates CLIP.encode_text)
+    #     x = emb + self.clip_model.positional_embedding
+    #     x = x.permute(1, 0, 2)                 # [seq, batch, d]
+    #     x = self.clip_model.transformer(x)
+    #     x = x.permute(1, 0, 2)                 # [batch, seq, d]
+    #     x = self.clip_model.ln_final(x)
+
+    #     eos_idx   = tok_ids.argmax(dim=-1).item()            # scalar
+    #     text_feat = x[0, eos_idx, :] @ self.clip_model.text_projection
+    #     text_feat = F.normalize(text_feat, dim=-1)            # [d]
+        
+    #     print(f"Text feature shape: {text_feat.shape}, EOS index: {eos_idx}")
+
+    #     # 5) target-image feature
+    #     with torch.no_grad():
+    #         tgt_feat = F.normalize(
+    #             self.clip_model.encode_image(tgt_tensor).squeeze(0), dim=-1
+    #         )                                                # [d]
+
+    #     print(f"Target image feature shape: {tgt_feat.shape}")
+
+    #     # 6) similarity & backward
+    #     sim = (text_feat * tgt_feat).sum()
+    #     self.clip_model.zero_grad()
+    #     self.phi.zero_grad(set_to_none=True)
+    #     sim.backward()
+        
+    #     print(f"Similarity score: {sim.item()}")
+
+    #     # 7) Grad×Input saliency
+    #     # grad = emb.grad.squeeze(0)                           # [77,d]
+    #     # sal  = (grad * emb.detach().squeeze(0)).sum(dim=-1).abs()   # [77]  <-- flat!
+
+    #     grad = emb.grad.squeeze(0) 
+    #     # sal = (grad * emb.detach().squeeze(0)).norm(dim=-1)      # L2-norm
+    #     sal = (grad * emb.detach().squeeze(0)).abs().sum(dim=-1)
+    #     sal = sal - sal.min()
+    #     if sal.max() > 0:
+    #         sal = sal / sal.max()
+        
+    #     print(f"Saliency scores shape: {sal.shape}")
+
+    #     # 8) readable tokens
+    #     from clip.simple_tokenizer import SimpleTokenizer
+    #     dec  = SimpleTokenizer()
+    #     toks_scores: List[Tuple[str, float]] = []
+
+    #     tok_ids_np = tok_ids.cpu().numpy()[0]
+    #     for i, tid in enumerate(tok_ids_np):
+    #         if tid in [0, 49406, 49407]:  # PAD, SOS, EOS
+    #             continue
+
+    #         score = float(sal[i])                     # sal[i] is 0-D – cast to Python
+    #         is_image_token = mask[0, i].item() != 0   # *** key change ***
+
+    #         token = "IMAGE" if is_image_token else dec.decode([int(tid)]).strip()
+    #         toks_scores.append((token, score))
+            
+    #     print(f"Number of tokens with scores: {len(toks_scores)}")
+
+    #     # # 9) optional L1 normalisation
+    #     # if normalise:
+    #     #     tot = sum(v for _, v in toks_scores) + 1e-8
+    #     #     toks_scores = [(t, v / tot) for t, v in toks_scores]
+
+    #     toks_scores.sort(key=lambda x: x[1], reverse=True)
+    #     print("Token attribution computed successfully.")
+    #     return toks_scores
+
+    def compute_token_attribution(
+        self,
+        reference_image,           # Tensor [1,3,H,W] | [3,H,W] | PIL.Image
+        relative_caption: str,
+        target_image,              # Tensor or PIL.Image
+        normalise: bool = True
+    ) -> List[Tuple[str, float]]:
+        """
+        Return a list of (token, importance) pairs showing how much every
+        caption   **and**   pseudo-image token contributes to the similarity
+        between the composed query and *target_image*.
+
+        Notes
+        -----
+        • Works for *searle*, *searle-xl* and *phi* evaluation types  
+        • Importance is the ‖g ⊙ a‖ L2-norm of gradient × activation  
+        • Scores are normalised to [0, 1] when *normalise* is True
+        """
+        if self.eval_type not in {"searle", "searle-xl", "phi"}:
+            raise NotImplementedError(
+                "Token attribution currently only supported for "
+                "eval_type 'searle', 'searle-xl' and 'phi'"
+            )
+
+        device_ = next(self.clip_model.parameters()).device
+        vocab     = clip.simple_tokenizer.SimpleTokenizer()
+
+        print(f"Computing token attribution for '{relative_caption}' ")
+
+        # ------------------------------------------------------------
+        # 1. Pre-process inputs
+        # ------------------------------------------------------------
+        def _prep_image(img):
+            if isinstance(img, PIL.Image.Image):
+                return self.preprocess(img).unsqueeze(0).to(device_)
+            if torch.is_tensor(img):
+                if img.ndim == 3:         # [C,H,W]  -> add batch
+                    img = img.unsqueeze(0)
+                return img.to(device_, non_blocking=True)
+            raise TypeError("reference_image / target_image must be "
+                            "PIL.Image or torch.Tensor")
+
+        ref_tensor    = _prep_image(reference_image)
+        target_tensor = _prep_image(target_image)
+
+        print(f"Reference image shape: {ref_tensor.shape}, Target image shape: {target_tensor.shape}")
+
+        # Extract reference features → Φ → pseudo tokens
+        with torch.no_grad():
+            ref_feats     = self.clip_model.encode_image(ref_tensor)
+            pseudo_tokens = self.phi(ref_feats)                 # (1, P, d)
+
+        print(f"Pseudo tokens shape: {pseudo_tokens.shape}")
+
+        # ------------------------------------------------------------
+        # 2. Build caption with placeholder and tokenise
+        # ------------------------------------------------------------
+        input_caption      = f"a photo of $ that {relative_caption.strip()}"
+        tokenised_caption  = clip.tokenize([input_caption], context_length=77).to(device_)
+        tokens_ids         = tokenised_caption[0].tolist()
+
+        print(f"Tokenized caption shape: {tokenised_caption.shape}, Caption: {input_caption}")
+
+        # ------------------------------------------------------------
+        # 3. Hooks to capture embeddings & gradients
+        # ------------------------------------------------------------
+        hook_data = dict(emb=None, grad=None)
+
+        # -- ❶ temporarily switch gradients **on** for the lookup table ----
+        tok_emb_weight = self.clip_model.token_embedding.weight
+        prev_req_grad  = tok_emb_weight.requires_grad         # remember old state
+        tok_emb_weight.requires_grad_(True)                   # ✨ ENABLED ✨
+
+        def _fwd_hook(_m, _inp, out):
+            out.retain_grad()                 # now allowed ✔
+            hook_data["emb"] = out            # keep reference (no .detach() !)
+
+        def _bwd_hook(_m, _gin, gout):
+            hook_data["grad"] = gout[0]
+
+        h_fwd = self.clip_model.token_embedding.register_forward_hook(_fwd_hook)
+        h_bwd = self.clip_model.token_embedding.register_backward_hook(_bwd_hook)
+
+        print(f"Registered hooks for token embedding. ")
+
+        # ------------------------------------------------------------
+        # 4. Forward pass – encode text with pseudo tokens
+        # ------------------------------------------------------------
+        # IMPORTANT:  run *with* autograd, NO torch.no_grad()
+        query_features = encode_with_pseudo_tokens(
+            self.clip_model, tokenised_caption, pseudo_tokens
+        )                                   # (1, d)
+        query_features = F.normalize(query_features, dim=-1)
+
+        # Encode target image (no grad needed)
+        with torch.no_grad():
+            target_features = self.clip_model.encode_image(target_tensor)
+            target_features = F.normalize(target_features, dim=-1)
+
+        # Similarity scalar
+        similarity = (query_features * target_features).sum()
+        
+        print(f"Query features shape: {query_features.shape}, Target features shape: {target_features.shape}")
+
+        # ------------------------------------------------------------
+        # 5. Back-prop to obtain gradients
+        # ------------------------------------------------------------
+        self.clip_model.zero_grad(set_to_none=True)
+        if self.phi:
+            self.phi.zero_grad(set_to_none=True)
+
+        similarity.backward()
+
+        print(f"Computed similarity: {similarity.item()}, Backpropagated gradients.")
+
+        # ------------------------------------------------------------
+        # 6. Importance for *text* tokens
+        # ------------------------------------------------------------
+        if hook_data["emb"] is None or hook_data["grad"] is None:
+            h_fwd.remove(), h_bwd.remove()
+            raise RuntimeError("Embedding hooks did not fire.  Make sure "
+                               "compute_token_attribution is called before "
+                               "any text forward pass.")
+
+        emb   = hook_data["emb"]   # (1, L, d)
+        grad  = hook_data["grad"]  # (1, L, d)
+        token_imp = (emb * grad).norm(dim=-1)[0]     # (L,)
+
+        print(f"Token importance computed for {len(tokens_ids)} tokens.")
+
+        # ------------------------------------------------------------
+        # 7. Importance for *pseudo* tokens (image slot '$')
+        # ------------------------------------------------------------
+        if pseudo_tokens.grad is not None:
+            pseudo_imp = (pseudo_tokens * pseudo_tokens.grad).norm(dim=-1)[0]  # (P,)
+        else:                # Should not really happen
+            pseudo_imp = torch.zeros(pseudo_tokens.shape[1], device=device_)
+
+        # Insert pseudo importance back into the right positions
+        placeholder_id = vocab.encode("$")[0]
+        placeholder_idxs = [i for i, t in enumerate(tokens_ids) if t == placeholder_id]
+
+        print(f"Found {len(placeholder_idxs)} placeholders for pseudo tokens.")
+
+        # Align counts – clip to min(P, #placeholders)
+        n_insert = min(len(placeholder_idxs), pseudo_imp.shape[0])
+        for k in range(n_insert):
+            token_imp[placeholder_idxs[k]] = pseudo_imp[k]
+
+        print(f"Inserted pseudo token importance into token importance vector.")
+
+        # ------------------------------------------------------------
+        # 8. Build readable token list & optionally normalise
+        # ------------------------------------------------------------
+        words, scores = [], []
+        for tok_id, score in zip(tokens_ids, token_imp.tolist()):
+            if tok_id == 0:                     # padding
+                continue
+            word = vocab.decode([tok_id])
+            words.append(word)
+            scores.append(score)
+
+        print(f"Extracted {len(words)} tokens with scores.")
+
+        # Optional min-max normalisation → [0,1]
+        if normalise and scores:
+            s = torch.tensor(scores)
+            s = (s - s.min()) / (s.max() - s.min() + 1e-8)
+            scores = s.tolist()
+
+        # Clean-up hooks
+        h_fwd.remove(), h_bwd.remove()
+
+        print(f"Hooks removed, token attribution computation completed.")
+
+        # Return pairs **sorted** by descending importance (handy for UI)
+        token_attr = list(zip(words, scores))
+        token_attr.sort(key=lambda x: x[1], reverse=True)
+
+        h_fwd.remove(); h_bwd.remove()
+        tok_emb_weight.requires_grad_(prev_req_grad)   # ❷ RESTORE
+        return token_attr
+
+
 def main():
     parser = ArgumentParser(description="Composed Image Retrieval Demo using SEARLE techniques")
     parser.add_argument("--dataset-path", type=str, required=True, help="Path to the dataset")

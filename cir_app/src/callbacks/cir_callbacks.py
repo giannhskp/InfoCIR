@@ -19,7 +19,7 @@ import json
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from dash import dcc
 import plotly.graph_objects as go
-from src.widgets import gallery, wordcloud, histogram, scatterplot
+from src.widgets import gallery, wordcloud, histogram, scatterplot, tokenbar
 
 from src.shared import cir_systems
 
@@ -73,7 +73,8 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-toggle-button', 'style', allow_duplicate=True),
      Output('cir-run-button', 'style'),
      Output('cir-enhance-results', 'children', allow_duplicate=True),
-     Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True)],
+     Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
+     Output('token-bar-tab-container', 'children')],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'),
      State('cir-text-prompt', 'value'),
@@ -99,7 +100,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
 
         with cir_systems.lock:
             if selected_model == "freedom":
-                results = cir_systems.cir_system_freedom.query(tmp.name, text_prompt, top_n)
+                results, final_query_features_freedom = cir_systems.cir_system_freedom.query(tmp.name, text_prompt, top_n)
             else:  # default to searle
                 results = cir_systems.cir_system_searle.query(tmp.name, text_prompt, top_n)
 
@@ -195,6 +196,16 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             else:
                 # For other eval types, use the reference image features as fallback
                 final_query_features = feat
+
+        token_attr = cir_systems.cir_system_searle.compute_token_attribution(
+            query_input,
+            text_prompt,
+            cir_systems.cir_system_searle.preprocess(Image.open(img_path).convert('RGB')).unsqueeze(0).to(device_model)
+        )
+
+        print("Token attribution computed:", token_attr)
+
+        token_bar = tokenbar.create_token_bar(token_attr)
         
         final_query_feat_np = final_query_features.cpu().numpy()
         
@@ -221,14 +232,15 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'tsne_y_query': None,  # Not used since Query is only shown for UMAP
             'upload_contents': upload_contents,
             'text_prompt': text_prompt,
-            'top_n': top_n
+            'top_n': top_n,
+            'original_token_attribution': token_attr
         }
         # Show visualize button, hide Run CIR, clear enhance data
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None
+        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, token_bar
     except Exception as e:
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
         # On error, hide visualize button, show Run CIR, clear enhance results and data
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, None
 
 # Button toggle callback for CIR visualization
 @callback(
@@ -431,11 +443,60 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
     sims = []
     ranks = []  # List to store the rank (position) of the selected image
     all_prompt_results = []
+    token_attributions_list = []
     for p in prompts:
         # Use the same query method as full CIR to get full results
         full_prompt_results = cir_systems.cir_system_searle.query(tmp.name, p, search_data['top_n'])
         all_prompt_results.append(full_prompt_results)
-        
+
+        # Compute token attribution for this enhanced prompt (SEARLE)
+        clip_model = cir_systems.cir_system_searle.clip_model
+        device_model = next(clip_model.parameters()).device
+
+        # Compute query image features
+        img = Image.open(tmp.name).convert('RGB')
+        inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
+        with torch.no_grad():
+            img_feat = clip_model.encode_image(inp)
+            img_feat = F.normalize(img_feat.float(), dim=-1)
+
+        # Compute final composed query embedding with pseudo tokens
+        if cir_systems.cir_system_searle.eval_type in ['phi', 'searle', 'searle-xl']:
+            pseudo = cir_systems.cir_system_searle.phi(img_feat)
+            caption = f"a photo of $ that {p}"
+            tokenized = clip.tokenize([caption], context_length=77).to(device_model)
+            from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
+            final_query = encode_with_pseudo_tokens(clip_model, tokenized, pseudo)
+            final_query = F.normalize(final_query)
+        else:
+            final_query = img_feat
+
+        # build the PIL of the reference (query) image
+        ref_pil = Image.open(tmp.name).convert("RGB")          # already on disk
+
+        # resolve the candidate image that the user picked
+        df = Dataset.get()
+        try:                                                   # numeric or string id
+            ix = int(selected_image_id)
+            cand_path = df.loc[ix]['image_path'] if ix in df.index else None
+        except Exception:
+            cand_path = df.loc[selected_image_id]['image_path'] if selected_image_id in df.index else None
+
+        if cand_path is None or not os.path.exists(cand_path):
+            raise FileNotFoundError(f"Could not resolve image {selected_image_id}")
+
+        cand_pil = Image.open(cand_path).convert("RGB")        # target image
+        # -----------------------------------------------
+        # finally: call the helper  – THIS is the line you were missing
+        token_attr = cir_systems.cir_system_searle.compute_token_attribution(
+            ref_pil,              # reference_image
+            p,                    # relative_caption  (the current enhanced prompt)
+            cand_pil,             # target_image
+            normalise=True        # (optional – default True)
+        )
+
+        token_attributions_list.append({'prompt': p, 'attribution': token_attr})
+
         # Find the similarity score for the ideal image in these results
         ideal_score = None
         position = None
@@ -538,6 +599,8 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         rows.append(dbc.Row(cards[i:i+6], className="g-2 mb-3"))
     images_grid = html.Div(rows)
 
+    token_bar = tokenbar.create_token_bar(token_attributions_list[best_idx]['attribution'])
+
     # Build enhance results children with improved styling
     enhance_children = [
         # Main title with icon
@@ -562,7 +625,10 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         # Results section
         html.Div([
             html.H6([html.I(className="fas fa-images me-2"), "CIR Results for Best Prompt"], className="mt-4 mb-3 text-secondary"),
-            images_grid
+            images_grid,
+            html.Hr(),
+            html.H6([html.I(className="fas fa-align-left me-2"), "Token Attribution"], className="mt-4 mb-3 text-secondary"),
+            token_bar
         ])
     ]
 
@@ -573,7 +639,8 @@ def enhance_prompt(n_clicks, search_data, selected_image_id):
         'positions': ranks,
         'all_results': all_prompt_results,
         'best_idx': best_idx,
-        'currently_viewing': best_idx  # Default to showing best prompt results
+        'currently_viewing': best_idx,  # Default to showing best prompt results
+        'token_attributions': token_attributions_list
     }
     
     return status, enhance_children, enhanced_prompts_data
@@ -647,6 +714,8 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     for i in range(0, len(cards), 6):
         rows.append(dbc.Row(cards[i:i+6], className="g-2 mb-3"))
     images_grid = html.Div(rows)
+
+    token_bar = tokenbar.create_token_bar(enhanced_data['token_attributions'][clicked_index]['attribution'])
 
     # Create enhanced table rows with updated button states
     table_rows = []
@@ -725,7 +794,10 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
         # Results section
         html.Div([
             html.H6([html.I(className="fas fa-images me-2"), f"CIR Results for {'Best ' if clicked_index == best_idx else ''}Prompt"], className="mt-4 mb-3 text-secondary"),
-            images_grid
+            images_grid,
+            html.Hr(),
+            html.H6([html.I(className="fas fa-align-left me-2"), "Token Attribution"], className="mt-4 mb-3 text-secondary"),
+            token_bar
         ])
     ]
     
@@ -881,6 +953,7 @@ def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data):
      Output('wordcloud', 'list', allow_duplicate=True),
      Output('histogram', 'figure', allow_duplicate=True),
      Output('scatterplot', 'figure', allow_duplicate=True),
+     Output('token-bar-tab-container', 'children', allow_duplicate=True),
      Output('selected-image-data', 'data', allow_duplicate=True),
      Output('selected-gallery-image-ids', 'data', allow_duplicate=True)],
     Input('prompt-selection', 'value'),
@@ -991,7 +1064,9 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     # Clear any previous gallery selections when switching to enhanced prompt results
     gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,[])
     hist = histogram.draw_histogram(cir_df)
-    return gal, wc, hist, scatterplot_fig, None, []
+    token_bar = tokenbar.create_token_bar(enhanced_data['token_attributions'][selected_idx]['attribution'])
+
+    return gal, wc, hist, scatterplot_fig, token_bar, None, []
 
 @callback(
     Output('model-change-flag', 'children'),
