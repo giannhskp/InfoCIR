@@ -49,6 +49,12 @@ class Dataset:
                 )
                 cir_systems.cir_system_freedom.create_database(config.WORK_DIR)
         
+        # Initialize the saliency manager
+        with cir_systems.lock:
+            if cir_systems.saliency_manager is None:
+                from src.saliency import SaliencyManager
+                cir_systems.saliency_manager = SaliencyManager()
+        
         # Print dataset statistics
         print(f"\nDataset Statistics:")
         print(f"Total number of images: {len(Dataset.data)}")

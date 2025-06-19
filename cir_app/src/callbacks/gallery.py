@@ -183,19 +183,9 @@ def _handle_cir_multi_selection(scatterplot_fig, selected_image_ids, selected_cl
                 selected_coordinates.append((xi, yi))
                 break
     
-    # Remove selected images from CIR traces
-    for trace in cir_traces:
-        if trace.get('name') in ['Top-K', 'Top-1']:
-            new_x, new_y = [], []
-            for xi, yi in zip(trace['x'], trace['y']):
-                # Check if this point matches any selected image
-                is_selected = any(abs(xi - sx) < 1e-10 and abs(yi - sy) < 1e-10 
-                                for sx, sy in selected_coordinates)
-                if not is_selected:
-                    new_x.append(xi)
-                    new_y.append(yi)
-            trace['x'] = new_x
-            trace['y'] = new_y
+    # NOTE: Keep selected images inside Top-K / Top-1 traces so they revert
+    # back to the original orange / yellow when deselected.  We only add an
+    # extra green overlay; no need to remove them from existing traces.
     
     # Rebuild scatterplot data with modified CIR traces
     scatterplot_fig['data'] = [main_trace] + cir_traces + other_traces

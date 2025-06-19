@@ -172,23 +172,44 @@ html, body {
 /* Make CIR result cards clickable and highlightable */
 .result-card {
     cursor: pointer;
+    transition: all 0.3s ease-in-out;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.result-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .result-card.selected {
     background-color: #d4edda;
-    border: 2px solid #28a745;
+    border: 2px solid #28a745 !important;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
 }
 
 /* Make CIR result wrapper clickable */
 .result-card-wrapper {
     cursor: pointer;
-    display: inline-block;
+    display: block;
+    height: 100%;
 }
 
 /* Highlight inner card when wrapper is selected */
 .result-card-wrapper.selected .result-card {
     background-color: #d4edda;
-    border: 2px solid #28a745;
+    border: 2px solid #28a745 !important;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+}
+
+/* Ensure uniform spacing for result cards */
+.result-card-wrapper {
+    margin-bottom: 1rem;
+}
+
+/* Fix badge styling in result cards */
+.result-card .badge {
+    border-radius: 12px;
+    padding: 4px 8px;
 }
 
 /* Prompt enhancement tab styling */
@@ -199,9 +220,354 @@ html, body {
 #tab-prompt-enhancement .prompt-cards-container {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.5rem;
+    gap: 0.4rem;
+    padding: 0.25rem;
 }
 #tab-prompt-enhancement .prompt-cards-container > div {
     width: 100%;
+}
+
+/* Compact prompt enhancement cards */
+.prompt-enhancement-card {
+    transition: all 0.2s ease-in-out;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    margin-bottom: 0.3rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.prompt-enhancement-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.prompt-enhancement-card.best-prompt {
+    border-color: #28a745;
+    border-width: 2px;
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.02), rgba(40, 167, 69, 0.05));
+}
+
+.prompt-enhancement-card.selected {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    border-width: 2px;
+}
+
+.prompt-enhancement-card.selected.best-prompt {
+    background: linear-gradient(135deg, rgba(40, 167, 69, 0.15), rgba(40, 167, 69, 0.25));
+    border-color: #198754;
+    box-shadow: 0 6px 16px rgba(40, 167, 69, 0.4);
+}
+
+.prompt-enhancement-card.selected:not(.best-prompt) {
+    background: linear-gradient(135deg, rgba(13, 202, 240, 0.15), rgba(13, 202, 240, 0.25));
+    border-color: #0dcaf0;
+    box-shadow: 0 6px 16px rgba(13, 202, 240, 0.4);
+}
+
+.prompt-card-body {
+    padding: 0.5rem !important;
+}
+
+.prompt-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+}
+
+.prompt-card-title {
+    display: flex;
+    align-items: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.prompt-card-metrics {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.prompt-card-text {
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 0.7rem;
+    line-height: 1.2;
+    color: #2d3748;
+    margin: 0;
+    padding: 0.25rem 0;
+    background: rgba(248, 249, 250, 0.8);
+    border-radius: 4px;
+    padding: 0.3rem 0.4rem;
+    border-left: 3px solid #e9ecef;
+}
+
+.prompt-card-text.best-prompt {
+    background: rgba(40, 167, 69, 0.05);
+    border-left-color: #28a745;
+}
+
+.prompt-metric-badge {
+    font-size: 0.6rem;
+    padding: 0.15rem 0.3rem;
+    border-radius: 10px;
+    font-weight: 500;
+    min-width: 2rem;
+    text-align: center;
+}
+
+.prompt-metric-label {
+    font-size: 0.6rem;
+    color: #6c757d;
+    margin-right: 0.15rem;
+}
+
+.prompt-card-icon {
+    font-size: 0.8rem;
+    margin-right: 0.25rem;
+}
+
+/* Saliency tab styling */
+#tab-saliency {
+    height: 100%;
+}
+
+.saliency-image-container {
+    transition: all 0.3s ease-in-out;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.saliency-image-container:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.saliency-navigation-controls {
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    padding: 0.2rem !important;
+}
+
+.saliency-navigation-controls .btn {
+    font-size: 0.6rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 500;
+    transition: all 0.2s ease-in-out;
+}
+
+.saliency-navigation-controls .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.saliency-navigation-controls .btn-outline-primary {
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.saliency-navigation-controls .btn-outline-primary:hover {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+}
+
+.saliency-navigation-controls .btn:disabled {
+    opacity: 0.4;
+    transform: none;
+}
+
+.saliency-navigation-controls span {
+    font-size: 0.65rem;
+    color: white !important;
+    font-weight: 700 !important;
+    background: linear-gradient(135deg, #0d6efd, #084298);
+    padding: 0.3rem 0.6rem;
+    border-radius: 15px;
+    box-shadow: 0 2px 6px rgba(13, 110, 253, 0.3);
+    border: 1px solid #0d6efd;
+    letter-spacing: 0.3px;
+}
+
+.saliency-pair-container {
+    min-height: 450px;
+}
+
+/* Compact Saliency Styling */
+.saliency-compact-content {
+    padding: 0.25rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.saliency-pair-row {
+    display: flex;
+    gap: 0.4rem;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+}
+
+.saliency-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 0;
+    max-width: 45%;
+}
+
+.saliency-compact-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    overflow: hidden;
+    transition: all 0.2s ease-in-out;
+    min-height: 80px;
+    max-height: 120px;
+    width: 100%;
+}
+
+.saliency-compact-container.reference-saliency {
+    border: 1px solid #0d6efd;
+    background: linear-gradient(135deg, rgba(13, 110, 253, 0.02), rgba(13, 110, 253, 0.05));
+}
+
+.saliency-compact-container.candidate-saliency {
+    border: 1px solid #198754;
+    background: linear-gradient(135deg, rgba(25, 135, 84, 0.02), rgba(25, 135, 84, 0.05));
+}
+
+.saliency-compact-container:hover {
+    transform: scale(1.03);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.saliency-compact-container.reference-saliency:hover {
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.25);
+    border-color: #0d6efd;
+    border-width: 2px;
+}
+
+.saliency-compact-container.candidate-saliency:hover {
+    box-shadow: 0 2px 8px rgba(25, 135, 84, 0.25);
+    border-color: #198754;
+    border-width: 2px;
+}
+
+.saliency-compact-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 2px;
+}
+
+.saliency-compact-content .badge {
+    font-size: 0.7rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 15px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    letter-spacing: 0.3px;
+    font-weight: 600;
+}
+
+/* Custom Tooltip Styles for Rank Delta Matrix */
+.tooltip-container {
+    position: relative;
+    display: inline-block;
+}
+
+.custom-tooltip {
+    visibility: hidden;
+    position: fixed;
+    z-index: 9999;
+    background: linear-gradient(135deg, #2c3e50, #34495e);
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    min-width: 200px;
+    max-width: 400px;
+    text-align: left;
+    white-space: normal;
+    word-wrap: break-word;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    pointer-events: none;
+}
+
+.custom-tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: #2c3e50;
+    pointer-events: none;
+}
+
+/* Tooltip positioning is now handled by JavaScript */
+
+.tooltip-title {
+    font-weight: 600;
+    font-size: 0.8rem;
+    margin-bottom: 0.4rem;
+    color: #ecf0f1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 0.3rem;
+}
+
+.tooltip-text {
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: #bdc3c7;
+    font-style: italic;
+}
+
+/* Responsive tooltip positioning */
+@media (max-width: 768px) {
+    .custom-tooltip {
+        min-width: 180px;
+        max-width: 300px;
+        font-size: 0.7rem;
+    }
+    
+    .tooltip-title {
+        font-size: 0.75rem;
+    }
+    
+    .tooltip-text {
+        font-size: 0.7rem;
+    }
+}
+
+/* Visualization selected result card (distinct from prompt enhancement selection) */
+.visual-selected .result-card {
+    border: 2px solid #0d6efd !important; /* blue */
+    box-shadow: 0 0 10px rgba(13, 110, 253, 0.4) !important;
+}
+
+/* Make tab headers smaller to give more space to content */
+#left-tabs .tab {
+    height: 32px !important;
+    padding: 6px 12px !important;
+    font-size: 0.85rem !important;
+    line-height: 1.2 !important;
+}
+
+#left-tabs .tab--selected {
+    height: 32px !important;
+    padding: 6px 12px !important;
 } 

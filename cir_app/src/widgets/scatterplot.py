@@ -13,6 +13,13 @@ def highlight_class_on_scatterplot(scatterplot, class_names):
         colors = config.SCATTERPLOT_COLOR
     scatterplot['data'][0]['marker'] = {'color': colors}
 
+    # Update legend for selected class based on whether any class is highlighted.
+    _update_legend_for_selected_class(
+        scatterplot,
+        class_highlighted=bool(class_names),
+        color=config.SCATTERPLOT_SELECTED_COLOR,
+    )
+
 def highlight_selected_image_and_class(scatterplot, selected_image_id, class_names):
     """Highlight a specific selected image and its class with different colors"""
     df = Dataset.get()
@@ -37,8 +44,13 @@ def highlight_selected_image_and_class(scatterplot, selected_image_id, class_nam
         colors = df.apply(get_color, axis=1)
         scatterplot['data'][0]['marker'] = {'color': colors}
     
-    # Update legend to include selected image trace (preserve CIR traces)
+    # Update legend traces: first selected image, then (optionally) selected class
     _update_legend_for_selected_image(scatterplot)
+    _update_legend_for_selected_class(
+        scatterplot,
+        class_highlighted=bool(class_names),
+        color=config.SELECTED_CLASS_COLOR,
+    )
 
 def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
     """Handle image selection when CIR traces are active"""
@@ -73,27 +85,12 @@ def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
     if selected_x is None:
         return  # Selected image not found in data
     
-    # Remove selected image from CIR traces and track which trace it came from
-    selected_was_top1 = False
-    for trace in cir_traces:
-        if trace.get('name') == 'Top-K':
-            # Remove selected image from Top-K trace
-            new_x, new_y = [], []
-            for xi, yi in zip(trace['x'], trace['y']):
-                if not (abs(xi - selected_x) < 1e-10 and abs(yi - selected_y) < 1e-10):
-                    new_x.append(xi)
-                    new_y.append(yi)
-            trace['x'] = new_x
-            trace['y'] = new_y
-            
-        elif trace.get('name') == 'Top-1':
-            # Check if selected image is the Top-1 and remove it
-            if (len(trace['x']) == 1 and 
-                abs(trace['x'][0] - selected_x) < 1e-10 and 
-                abs(trace['y'][0] - selected_y) < 1e-10):
-                trace['x'] = []
-                trace['y'] = []
-                selected_was_top1 = True
+    # Keep points in their CIR traces; just overlay selected point.
+    selected_was_top1 = any(
+        trace.get('name') == 'Top-1' and len(trace['x']) == 1 and
+        abs(trace['x'][0]-selected_x)<1e-10 and abs(trace['y'][0]-selected_y)<1e-10
+        for trace in cir_traces
+    )
     
     # Rebuild scatterplot data with modified CIR traces
     scatterplot['data'] = [main_trace] + cir_traces + other_traces
@@ -161,16 +158,7 @@ def _update_legend_for_selected_image(scatterplot):
             marker=dict(size=7, color="blue", symbol='circle'),
         ).to_plotly_json()
     )
-    scatterplot['data'].append(
-        go.Scatter(
-            x=[None],
-            y=[None],
-            mode="markers",
-            name='selected class',
-            marker=dict(size=7, color=config.SELECTED_CLASS_COLOR, symbol='circle'),
-        ).to_plotly_json()
-    )
-    
+
     # Only add "Selected Image" legend trace if there's no actual selected image trace
     if not selected_image_trace:
         scatterplot['data'].append(
@@ -180,6 +168,38 @@ def _update_legend_for_selected_image(scatterplot):
                 mode="markers",
                 name='Selected Image',  # Match the data trace name exactly
                 marker=dict(size=7, color=config.SELECTED_IMAGE_COLOR, symbol='circle'),
+            ).to_plotly_json()
+        )
+
+# ---------------------------------------------------------------------------
+# Legend helper for the "selected class" trace
+# ---------------------------------------------------------------------------
+
+def _update_legend_for_selected_class(scatterplot, class_highlighted: bool, color: str):
+    """Add or remove the 'selected class' legend trace.
+
+    Parameters
+    ----------
+    scatterplot : dict
+        Plotly figure JSON.
+    class_highlighted : bool
+        Whether a class is currently highlighted on the scatterplot.
+    color : str
+        Colour to use for the legend marker when a class is highlighted.
+    """
+
+    # First, remove any existing 'selected class' legend traces.
+    scatterplot['data'] = [trace for trace in scatterplot['data'] if trace.get('name') != 'selected class']
+
+    if class_highlighted:
+        # Append new legend trace at the end so it shows up in the legend.
+        scatterplot['data'].append(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name='selected class',
+                marker=dict(size=7, color=color, symbol='circle'),
             ).to_plotly_json()
         )
 
@@ -236,7 +256,22 @@ def create_scatterplot_figure(projection):
     fig.update_layout(dragmode='select')
     fig.update_yaxes(scaleanchor="x", scaleratio=1)
     
-    # Add legend traces
+    # NOTE: We do NOT add a legend trace for the "selected class" by default.
+    #       This trace is now dynamically created only when a class is actually
+    #       highlighted (e.g. after a histogram bar click or when an image is
+    #       selected). This avoids showing a stale legend entry when no class
+    #       is highlighted and guarantees that the legend colour always
+    #       reflects the value defined in the configuration file.
+
+    fig.update_layout(legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="left",
+        x=0
+    ))
+
+    # Keep the legend entry for the generic image embeddings.
     fig.add_trace(
         go.Scatter(
             x=[None],
@@ -246,23 +281,6 @@ def create_scatterplot_figure(projection):
             marker=dict(size=7, color="blue", symbol='circle'),
         ),
     )
-    fig.add_trace(
-        go.Scatter(
-            x=[None],
-            y=[None],
-            mode="markers",
-            name='selected class',
-            marker=dict(size=7, color="red", symbol='circle'),
-        ),
-    )
-
-    fig.update_layout(legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=1.02,
-        xanchor="left",
-        x=0
-    ))
     return fig
 
 def create_scatterplot(projection):
