@@ -183,10 +183,11 @@ def preprocess_saliency_data(saliency_data):
      Output('saliency-next-btn', 'disabled')],
     [Input('saliency-data', 'data'),
      Input('saliency-current-index', 'data'),
-     Input('cir-toggle-state', 'data')],
+     Input('cir-toggle-state', 'data'),
+     Input('saliency-fullscreen', 'data')],
     prevent_initial_call=True
 )
-def update_saliency_display(saliency_data, current_index, cir_toggle_state):
+def update_saliency_display(saliency_data, current_index, cir_toggle_state, saliency_fullscreen):
     """Update the saliency display based on current data and index."""
     global _current_pairs
     
@@ -227,59 +228,64 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state):
     # Get current pair
     rank, candidate_path, reference_path, image_name = pairs[current_index]
     
-    # Load images with optimization
-    try:
-        reference_src = load_and_resize_image(reference_path, max_width=150, max_height=150)
-        candidate_src = load_and_resize_image(candidate_path, max_width=150, max_height=150)
-        
-        if not reference_src or not candidate_src:
-            # If images fail to load, show compact error
-            content = [
-                html.Div([
-                    html.I(className="fas fa-exclamation-triangle text-warning me-2"),
-                    html.Span("Error loading images", className="text-muted small")
-                ], className="text-center p-2")
-            ]
-        else:
-            # Create compact display content
-            content = [
-                html.Div([
-                    # Height-centered images (no rank badge here anymore)
-                    html.Div([
-                        # Reference image
-                        html.Div([
-                            html.Div("Reference", className="text-center text-primary fw-bold mb-1", style={'fontSize': '0.65rem'}),
-                            html.Div([
-                                html.Img(
-                                    src=reference_src,
-                                    className="saliency-compact-image"
-                                )
-                            ], className="saliency-compact-container reference-saliency")
-                        ], className="saliency-column"),
-                        
-                        # Candidate image  
-                        html.Div([
-                            html.Div("Candidate", className="text-center text-success fw-bold mb-1", style={'fontSize': '0.65rem'}),
-                            html.Div([
-                                html.Img(
-                                    src=candidate_src,
-                                    className="saliency-compact-image"
-                                )
-                            ], className="saliency-compact-container candidate-saliency")
-                        ], className="saliency-column")
-                    ], className="saliency-pair-row")
-                ], className="saliency-compact-content")
-            ]
-            
-    except Exception as e:
-        print(f"Error processing saliency images: {e}")
+    # Use larger thumbnails when the saliency panel is in fullscreen
+    if saliency_fullscreen:
+        mw = 350; mh = 350
+    else:
+        mw = 150; mh = 150
+
+    # Adjust container size based on fullscreen
+    container_style = {
+        'minHeight': '360px',  # taller box for bigger image
+        'maxHeight': '480px',
+        'width': '100%',
+        'display': 'flex',
+        'alignItems': 'center',
+        'justifyContent': 'center'
+    } if saliency_fullscreen else {}
+    
+    reference_src = load_and_resize_image(reference_path, max_width=mw, max_height=mh)
+    candidate_src = load_and_resize_image(candidate_path, max_width=mw, max_height=mh)
+    
+    if not reference_src or not candidate_src:
+        # If images fail to load, show compact error
         content = [
             html.Div([
                 html.I(className="fas fa-exclamation-triangle text-warning me-2"),
-                html.Span("Processing error", className="text-muted small")
+                html.Span("Error loading images", className="text-muted small")
             ], className="text-center p-2")
         ]
-    
+    else:
+        # Create compact display content
+        content = [
+            html.Div([
+                # Height-centered images (no rank badge here anymore)
+                html.Div([
+                    # Reference image
+                    html.Div([
+                        html.Div("Reference", className="text-center text-primary fw-bold mb-1", style={'fontSize': '0.65rem'}),
+                        html.Div([
+                            html.Img(
+                                src=reference_src,
+                                className="saliency-compact-image"
+                            )
+                        ], className="saliency-compact-container reference-saliency", style=container_style)
+                    ], className="saliency-column"),
+                    
+                    # Candidate image  
+                    html.Div([
+                        html.Div("Candidate", className="text-center text-success fw-bold mb-1", style={'fontSize': '0.65rem'}),
+                        html.Div([
+                            html.Img(
+                                src=candidate_src,
+                                className="saliency-compact-image"
+                            )
+                        ], className="saliency-compact-container candidate-saliency", style=container_style)
+                    ], className="saliency-column")
+                ], className="saliency-pair-row")
+            ], className="saliency-compact-content")
+        ]
+        
     # Navigation info - only show rank
     nav_info = f"Rank {rank}"
     

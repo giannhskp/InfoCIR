@@ -22,6 +22,7 @@ import src.callbacks.help_button
 import src.callbacks.cir_callbacks
 import src.callbacks.saliency_callbacks
 import src.callbacks.rank_delta
+import src.callbacks.fullscreen
 
 def run_ui():
     """Run the Dash UI application"""
@@ -121,7 +122,18 @@ def run_ui():
 
     # ------------------------- CIR CONTROLS CARD (upload & parameters) -------------------------
     cir_controls_card = dbc.Card([
-        dbc.CardHeader(html.H6("Composed Image Retrieval", className="mb-0", style={'fontSize':'0.9rem'})),
+        dbc.CardHeader(
+            html.Div([
+                html.H6("Composed Image Retrieval", className="mb-0", style={'fontSize':'0.9rem'}),
+                dbc.Button(
+                    html.I(className="fas fa-expand"),
+                    id='cir-controls-expand-btn',
+                    size='sm',
+                    color='outline-secondary',
+                    class_name='ms-auto'
+                ),
+            ], className='d-flex align-items-center'),
+        ),
         dbc.CardBody([
             html.Label("Upload Query Image:", className="form-label fw-bold small", style={'fontSize':'0.7rem'}),
             dcc.Upload(
@@ -162,11 +174,22 @@ def run_ui():
             # Small preview thumbnail (filled by upload callback)
             html.Div(id='cir-upload-preview', className='mt-2')
         ], style={'height':'100%','overflow':'auto','flex':'1 1 auto'}),
-    ], className="border-widget", style={'flex':'1 1 25%', 'overflow':'auto'})
+    ], id='cir-controls-card', className="border-widget", style={'flex':'1 1 25%', 'overflow':'auto'})
 
     # ------------------------- CIR RESULTS CARD (preview + results) -------------------------
     cir_results_card = dbc.Card([
-        dbc.CardHeader(html.H6("Query Results", className="mb-0", style={'fontSize':'0.9rem'})),
+        dbc.CardHeader(
+            html.Div([
+                html.H6("Query Results", className="mb-0", style={'fontSize': '0.9rem'}),
+                dbc.Button(
+                    html.I(className="fas fa-expand"),
+                    id='cir-results-expand-btn',
+                    size='sm',
+                    color='outline-secondary',
+                    class_name='ms-auto'
+                ),
+            ], className='d-flex align-items-center'),
+        ),
         dbc.CardBody([
             html.Div(id='cir-query-preview', className="mb-2"),
             html.Div(id='cir-results', style={'flex':'1 1 auto', 'overflowY':'auto'}, children=[
@@ -175,10 +198,24 @@ def run_ui():
             html.Hr(className="my-2"),
             dbc.Button("Enhance prompt", id='enhance-prompt-button', color='secondary', size='sm', disabled=True, className="w-100 mb-1", style={'fontSize':'0.7rem'})
         ], style={'height':'100%','overflow':'auto','flex':'1 1 auto'}),
-    ], className="border-widget mt-2", style={'flex':'1 1 25%', 'overflow':'auto'})
+    ], id='cir-results-card', className="border-widget mt-2", style={'flex':'1 1 25%', 'overflow':'auto'})
 
-    # Wordcloud/Histogram card (remaining space)
-    left_wh_card = dbc.Card(dbc.CardBody(left_word_hist_tabs, style={'height':'100%','overflow':'auto','flex':'1 1 auto'}), className="border-widget mt-2", style={'flex':'1 1 25%', 'overflow':'auto'})
+    # Wordcloud/Histogram card with fullscreen capability
+    left_wh_card = dbc.Card([
+        dbc.CardHeader(
+            html.Div([
+                html.H6("Histogram / Wordcloud", className="mb-0", style={'fontSize': '0.9rem'}),
+                dbc.Button(
+                    html.I(className="fas fa-expand"),
+                    id='wh-expand-btn',
+                    size='sm',
+                    color='outline-secondary',
+                    class_name='ms-auto'
+                ),
+            ], className='d-flex align-items-center'),
+        ),
+        dbc.CardBody(left_word_hist_tabs, style={'height':'100%','overflow':'auto','flex':'1 1 auto'}),
+    ], id='hist-wh-card', className="border-widget mt-2", style={'flex':'1 1 25%', 'overflow':'auto'})
 
     left_column = html.Div(
         id='cir-interface',  # Anchor target for "Run CIR" button
@@ -227,15 +264,40 @@ def run_ui():
                 dbc.Col(
                     # RIGHT COLUMN STACKED COMPONENTS (no tabs)
                     html.Div([
-                        dbc.Card(dbc.CardBody([
-                            html.H6("Prompt Enhancement", className="fw-bold mb-1", style={'fontSize': '0.85rem'}),
-                            html.Div(id='prompt-enhancement-content', style={'overflowY':'auto', 'flex':'1 1 auto'}),
-                            dcc.RadioItems(id='prompt-selection', options=[], value=None, style={'display':'none'})
-                        ], style={'padding': '0.5rem'}), className='border-widget', style={'flex':'1 1 25%', 'overflow':'auto'}),
+                        # Prompt Enhancement card with fullscreen capability
+                        dbc.Card([
+                            dbc.CardHeader(
+                                html.Div([
+                                    html.H6("Prompt Enhancement", className="mb-0", style={'fontSize': '0.85rem'}),
+                                    dbc.Button(
+                                        html.I(className="fas fa-expand"),
+                                        id='prompt-enh-expand-btn',
+                                        size='sm',
+                                        color='outline-secondary',
+                                        class_name='ms-auto'
+                                    ),
+                                ], className='d-flex align-items-center'),
+                            ),
+                            dbc.CardBody([
+                                html.Div(id='prompt-enhancement-content', style={'overflowY':'auto', 'flex':'1 1 auto'}),
+                                dcc.RadioItems(id='prompt-selection', options=[], value=None, style={'display':'none'})
+                            ], style={'padding': '0.5rem', 'height': '100%', 'display': 'flex', 'flexDirection': 'column'}),
+                        ], id='prompt-enh-card', className='border-widget', style={'flex':'1 1 25%', 'overflow':'auto'}),
 
                         dbc.Card([
+                            dbc.CardHeader(
+                                html.Div([
+                                    html.H6("Saliency", className="mb-0", style={'fontSize': '0.85rem'}),
+                                    dbc.Button(
+                                        html.I(className="fas fa-expand"),
+                                        id='saliency-expand-btn',
+                                        size='sm',
+                                        color='outline-secondary',
+                                        class_name='ms-auto'
+                                    )
+                                ], className='d-flex align-items-center'),
+                            ),
                             dbc.CardBody([
-                                html.H6("Saliency", className="fw-bold mb-1", style={'fontSize': '0.85rem'}),
                                 html.Div(id='saliency-content', style={'flex':'1 1 auto', 'minHeight': '0'}),
                             ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': '100%'}),
                             html.Div(id='saliency-navigation', children=[
@@ -247,17 +309,44 @@ def run_ui():
                                                id='saliency-next-btn', color='outline-primary', size='sm', disabled=True)
                                 ], className='d-flex align-items-center justify-content-center gap-1 saliency-navigation-controls')
                             ], style={'display':'none', 'padding': '0.25rem'})
-                        ], className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'hidden', 'display': 'flex', 'flexDirection': 'column'}),
+                        ], id='saliency-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'hidden', 'display': 'flex', 'flexDirection': 'column'}),
 
-                        dbc.Card(dbc.CardBody([
-                            html.H6("Token Attribution", className="fw-bold mb-2"),
-                            html.Div(id='token-attribution-content', style={'flex':'1 1 auto'})
-                        ]), className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'auto'}),
+                        # Token Attribution card with fullscreen capability
+                        dbc.Card([
+                            dbc.CardHeader(
+                                html.Div([
+                                    html.H6("Token Attribution", className="mb-0", style={'fontSize': '0.85rem'}),
+                                    dbc.Button(
+                                        html.I(className="fas fa-expand"),
+                                        id='token-attr-expand-btn',
+                                        size='sm',
+                                        color='outline-secondary',
+                                        class_name='ms-auto'
+                                    ),
+                                ], className='d-flex align-items-center'),
+                            ),
+                            dbc.CardBody([
+                                html.Div(id='token-attribution-content', style={'flex':'1 1 auto'})
+                            ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': '100%'}),
+                        ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'auto'}),
 
-                        dbc.Card(dbc.CardBody([
-                            html.H6("Rank-Δ", className="fw-bold mb-2"),
-                            html.Div(id='rank-delta-content', style={'flex':'1 1 auto'})
-                        ]), className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'auto'})
+                        dbc.Card([
+                            dbc.CardHeader(
+                                html.Div([
+                                    html.H6("Rank-Δ", className="mb-0", style={'fontSize': '0.85rem'}),
+                                    dbc.Button(
+                                        html.I(className="fas fa-expand"),
+                                        id='rank-delta-expand-btn',
+                                        size='sm',
+                                        color='outline-secondary',
+                                        class_name='ms-auto'
+                                    ),
+                                ], className='d-flex align-items-center'),
+                            ),
+                            dbc.CardBody([
+                                html.Div(id='rank-delta-content', style={'flex':'1 1 auto'})
+                            ]),
+                        ], id='rank-delta-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'auto'})
                     ], className='d-flex flex-column h-100'),
                     width=3, className='main-col'
                 )
@@ -300,7 +389,23 @@ def run_ui():
             dcc.Store(id='saliency-data', data=None),
             dcc.Store(id='saliency-current-index', data=0),
             # Store for class selected in histogram (None when nothing is selected)
-            dcc.Store(id='selected-histogram-class', data=None)
+            dcc.Store(id='selected-histogram-class', data=None),
+            # Store for Query Results fullscreen state
+            dcc.Store(id='cir-results-fullscreen', data=False),
+            # Store for Histogram/Wordcloud fullscreen state
+            dcc.Store(id='hist-wh-fullscreen', data=False),
+            # Store for Prompt Enhancement fullscreen state
+            dcc.Store(id='prompt-enh-fullscreen', data=False),
+            # Store for Rank-Delta fullscreen state
+            dcc.Store(id='rank-delta-fullscreen', data=False),
+            # Store for Saliency fullscreen state
+            dcc.Store(id='saliency-fullscreen', data=False),
+            # Store for Token Attribution fullscreen state
+            dcc.Store(id='token-attr-fullscreen', data=False),
+            # Store for CIR Controls fullscreen state
+            dcc.Store(id='cir-controls-fullscreen', data=False),
+            # Store for card ID
+            dcc.Store(id='card-id', data=None)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )

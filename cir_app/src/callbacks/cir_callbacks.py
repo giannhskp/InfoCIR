@@ -153,27 +153,24 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             # Create card body with improved styling
             card_body = dbc.CardBody([
                 html.Img(
-                    src=src, 
-                    className='img-fluid',
+                    src=src,
+                    className="img-fluid",
                     style={
-                        'maxHeight': '120px',
-                        'width': '100%',
-                        'objectFit': 'cover',
-                        'borderRadius': '4px',
-                        'marginBottom': '8px'
-                    }
+                        "maxWidth": "100%",
+                        "height": "auto",
+                        "objectFit": "contain",
+                        "borderRadius": "4px",
+                        "marginBottom": "8px",
+                    },
                 ),
                 html.Div([
                     html.Small(
-                        f"{score:.3f}", 
-                        className='badge bg-primary',
-                        style={
-                            'fontSize': '0.65rem',
-                            'fontWeight': '500'
-                        }
+                        f"{score:.3f}",
+                        className="badge bg-primary",
+                        style={"fontSize": "0.65rem", "fontWeight": "500"},
                     )
-                ], className='text-center')
-            ], style={'padding': '8px'})
+                ], className="text-center"),
+            ], style={"padding": "8px", "display": "flex", "flexDirection": "column", "alignItems": "center", "justifyContent": "center"})
             
             # TOP-1 card behaviour differs between modes
             if card_index == 0:
@@ -1277,9 +1274,9 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
                 src=src,
                 className="img-fluid",
                 style={
-                    "maxHeight": "120px",
-                    "width": "100%",
-                    "objectFit": "cover",
+                    "maxWidth": "100%",
+                    "height": "auto",
+                    "objectFit": "contain",
                     "borderRadius": "4px",
                     "marginBottom": "8px",
                 },
@@ -1291,7 +1288,7 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
                     style={"fontSize": "0.65rem", "fontWeight": "500"},
                 )
             ], className="text-center"),
-        ], style={"padding": "8px"})
+        ], style={"padding": "8px", "display": "flex", "flexDirection": "column", "alignItems": "center", "justifyContent": "center"})
 
         # TOP-1 card behaviour differs between modes
         if idx == 0:
