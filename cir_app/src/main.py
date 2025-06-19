@@ -89,8 +89,9 @@ def run_ui():
                     children=[
                         html.Div("Run a CIR query with saliency enabled to view token attributions.", className="text-muted p-4")
                     ],
-                    style={'height': '100%', 'overflowX': 'auto', 'overflowY': 'auto'}
-                )
+                    style={'flex':'1 1 auto','overflowX': 'auto', 'overflowY': 'auto'}
+                ),
+                # Navigation handled in the right-column Token Attribution card
             ]),
             # Rank-Δ Tab
             dcc.Tab(label='Rank-Δ', value='rank-delta', id='tab-rank-delta', children=[
@@ -299,7 +300,7 @@ def run_ui():
                             ),
                             dbc.CardBody([
                                 html.Div(id='saliency-content', style={'flex':'1 1 auto', 'minHeight': '0'}),
-                            ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': '100%'}),
+                            ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': 'calc(100% - 45px)'}),
                             html.Div(id='saliency-navigation', children=[
                                 html.Div([
                                     dbc.Button([html.I(className="fas fa-chevron-left me-1"), "Prev"],
@@ -308,8 +309,8 @@ def run_ui():
                                     dbc.Button(["Next ", html.I(className="fas fa-chevron-right ms-1")],
                                                id='saliency-next-btn', color='outline-primary', size='sm', disabled=True)
                                 ], className='d-flex align-items-center justify-content-center gap-1 saliency-navigation-controls')
-                            ], style={'display':'none', 'padding': '0.25rem'})
-                        ], id='saliency-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'hidden', 'display': 'flex', 'flexDirection': 'column'}),
+                            ], style={'display':'none', 'padding': '0.25rem', 'height': '45px', 'flexShrink': '0'})
+                        ], id='saliency-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}),
 
                         # Token Attribution card with fullscreen capability
                         dbc.Card([
@@ -326,9 +327,18 @@ def run_ui():
                                 ], className='d-flex align-items-center'),
                             ),
                             dbc.CardBody([
-                                html.Div(id='token-attribution-content', style={'flex':'1 1 auto'})
-                            ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': '100%'}),
-                        ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'auto'}),
+                                html.Div(id='token-attribution-content', style={'flex':'1 1 auto', 'minHeight': '0', 'overflowY': 'auto', 'overflowX': 'hidden'})
+                            ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': 'calc(100% - 45px)'}),
+                            html.Div(id='token-attribution-navigation', children=[
+                                html.Div([
+                                    dbc.Button([html.I(className="fas fa-chevron-left me-1"), "Prev"],
+                                               id='ta-prev-btn', color='outline-primary', size='sm', disabled=True),
+                                    html.Span(id='token-attribution-current-info', className='mx-2 text-muted small fw-bold'),
+                                    dbc.Button(["Next ", html.I(className="fas fa-chevron-right ms-1")],
+                                               id='ta-next-btn', color='outline-primary', size='sm', disabled=True)
+                                ], className='d-flex align-items-center justify-content-center gap-1 saliency-navigation-controls')
+                            ], style={'display':'none', 'padding': '0.25rem', 'height': '45px', 'flexShrink': '0'}),
+                        ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}),
 
                         dbc.Card([
                             dbc.CardHeader(
@@ -405,7 +415,9 @@ def run_ui():
             # Store for CIR Controls fullscreen state
             dcc.Store(id='cir-controls-fullscreen', data=False),
             # Store for card ID
-            dcc.Store(id='card-id', data=None)
+            dcc.Store(id='card-id', data=None),
+            # Store for token attribution index in the list of dcc.Store components (search for saliency-data store area)
+            dcc.Store(id='token-attribution-index', data=0)
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )

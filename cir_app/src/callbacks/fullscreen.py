@@ -153,7 +153,7 @@ def toggle_saliency_fullscreen(n_clicks, is_fullscreen):
         icon = html.I(className='fas fa-compress')
         color = 'secondary'
     else:
-        style = {'flex': '1 1 25%', 'overflow': 'hidden', 'display': 'flex', 'flexDirection': 'column'}
+        style = {'flex': '1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}
         icon = html.I(className='fas fa-expand')
         color = 'outline-secondary'
     return style, new_state, icon, color
@@ -180,7 +180,8 @@ def toggle_token_attr_fullscreen(n_clicks, is_fullscreen):
         icon = html.I(className='fas fa-compress')
         color = 'secondary'
     else:
-        style = {'flex': '1 1 25%', 'overflow': 'auto'}
+        # Restore original Token Attribution card styling exactly as defined in main.py
+        style = {'flex': '1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}
         icon = html.I(className='fas fa-expand')
         color = 'outline-secondary'
     return style, new_state, icon, color

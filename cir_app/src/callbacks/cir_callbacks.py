@@ -242,6 +242,10 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             save_dir = saliency_data.get('save_directory')
             if save_dir:
                 saliency_summary = {'save_directory': save_dir}
+
+                # Include token attribution data for in-app visualisation (lightweight)
+                if 'text_attribution' in saliency_data:
+                    saliency_summary['text_attribution'] = saliency_data['text_attribution']
         
         # Prepare store data for visualization - simplified version
         # Map retrieved image names to DataFrame indices

@@ -16,6 +16,9 @@ from src import config
 _saliency_image_cache = {}
 _current_pairs = []
 
+# Add import for Plotly
+import plotly.graph_objects as go
+
 def clear_saliency_cache():
     """Clear the saliency image cache to free memory."""
     global _saliency_image_cache
@@ -375,4 +378,236 @@ def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_sal
 
     # When directory changes, reset current index to 0 via preprocessing chain
     return {'save_directory': dir_to_use} 
-    return {'save_directory': dir_to_use} 
+
+
+# ------------------------------------------------------------
+# Token Attribution display callback
+# ------------------------------------------------------------
+
+@callback(
+    [Output('token-attribution-content', 'children', allow_duplicate=True),
+     Output('token-attribution-navigation', 'style'),
+     Output('token-attribution-current-info', 'children'),
+     Output('ta-prev-btn', 'disabled'),
+     Output('ta-next-btn', 'disabled')],
+    [Input('saliency-data', 'data'),
+     Input('token-attribution-index', 'data'),
+     Input('cir-toggle-state', 'data'),
+     Input('token-attr-fullscreen', 'data')],
+    prevent_initial_call=True
+)
+def update_token_attribution_display(saliency_data, current_index, cir_toggle_state, token_attr_fullscreen):
+    """Render token attribution barplot for the currently viewed candidate (no reference)."""
+    global _current_pairs
+
+    # Only show when visualization enabled
+    if not cir_toggle_state:
+        return (
+            html.Div([
+                html.I(className="fas fa-eye-slash text-muted me-2"),
+                html.Span("Enable visualization to view token attribution", className="text-muted small")
+            ], className="text-center p-2"),
+            {'display':'none'}, "", True, True
+        )
+
+    # Validate data availability
+    if not saliency_data or 'text_attribution' not in saliency_data:
+        return (
+            html.Div([
+                html.I(className="fas fa-info-circle text-muted me-2"),
+                 html.Span("Token attribution not available", className="text-muted")], className="p-2"),
+            {'display':'none'}, "", True, True
+        )
+
+    text_attr = saliency_data.get('text_attribution', {})
+    
+    # Build list of ONLY candidate attributions (one per retrieved image)
+    candidate_attributions = []
+
+    candidate_attrs = text_attr.get('candidates', {})
+
+    if candidate_attrs:
+        # If we have rank-ordered pairs, use them to impose order
+        if _current_pairs:
+            for rank, _, _, pair_name in _current_pairs:
+                # Keys in attribution dict may include extension; compare both raw and stem
+                attr_data = None
+                stem = Path(pair_name).stem
+                for key, val in candidate_attrs.items():
+                    if str(key) == str(pair_name) or str(key) == stem:
+                        attr_data = val
+                        break
+                # Fallback: try substring match
+                if attr_data is None:
+                    for key, val in candidate_attrs.items():
+                        if stem in str(key):
+                            attr_data = val
+                            break
+                if attr_data is not None:
+                    candidate_attributions.append((str(pair_name), attr_data, rank))
+        
+        # If some attributions were not matched (or no pairs) include remaining ones
+        if len(candidate_attributions) == 0 or len(candidate_attributions) < len(candidate_attrs):
+            seen = {a[0] for a in candidate_attributions}
+            for idx, (key, val) in enumerate(candidate_attrs.items(), start=1):
+                if str(key) in seen:
+                    continue
+                candidate_attributions.append((str(key), val, idx))
+        
+        # Sort by rank_num to keep stable order
+        candidate_attributions.sort(key=lambda x: x[2])
+
+    if not candidate_attributions:
+        return (
+            html.Div([
+                html.I(className="fas fa-info-circle text-muted me-2"),
+                html.Span("No candidate token attribution data found", className="text-muted")
+            ], className="p-2"),
+            {'display':'none'}, "", True, True
+        )
+
+    # Ensure current_index is within bounds
+    if current_index < 0:
+        current_index = 0
+    elif current_index >= len(candidate_attributions):
+        current_index = len(candidate_attributions) - 1
+
+    # Get current attribution data
+    attr_name, attr_data, rank_num = candidate_attributions[current_index]
+    
+    tokens = attr_data.get('tokens', [])
+    attributions = attr_data.get('attributions', [])
+    
+    # Ensure data are JSON-serialisable lists
+    try:
+        attributions = [float(a) for a in attributions]
+    except Exception:
+        attributions = list(attributions)
+
+    if not tokens or not attributions:
+        return (
+            html.Div([
+                html.I(className="fas fa-info-circle text-muted me-2"),
+                html.Span("Token attribution data empty", className="text-muted")
+            ], className="p-2"),
+            {'display':'none'}, "", True, True
+        )
+
+    # Resolve duplicate token labels by appending incremental suffix
+    token_labels = []
+    counts = {}
+    for t in tokens:
+        if t == '$':
+            t = '[QUERY-IMAGE]'
+        if t in counts:
+            counts[t] += 1
+            token_labels.append(f"{counts[t]*' '}{t}")
+        else:
+            counts[t] = 1
+            token_labels.append(t)
+
+    # Build Plotly bar chart
+    fig = go.Figure(data=[
+        go.Bar(x=token_labels, y=attributions, marker=dict(color=attributions, colorscale='Reds'))
+    ])
+    
+    # Title for candidate attribution
+    # title = f"Candidate Text Attribution (Rank {rank_num})"
+    
+    # Adjust chart size based on fullscreen mode
+    if token_attr_fullscreen:
+        chart_height = 400
+        chart_margin = dict(l=30, r=30, t=50, b=100)
+        title_font_size = 16
+        axis_font_size = 12
+    else:
+        chart_height = 180
+        chart_margin = dict(l=20, r=20, t=25, b=70)
+        title_font_size = 11
+        axis_font_size = 9
+    
+    fig.update_layout(
+        height=chart_height,
+        margin=chart_margin,
+        xaxis_tickangle=-45,
+        xaxis_title="Tokens",
+        yaxis_title="Attribution Score",
+        # title=title,
+        title_font_size=title_font_size,
+        xaxis_title_font_size=axis_font_size,
+        yaxis_title_font_size=axis_font_size,
+        template='simple_white'
+    )
+
+    graph = dcc.Graph(
+        figure=fig, 
+        config={'displayModeBar': False}, 
+        style={'height': f'{chart_height}px', 'width': '100%'}
+    )
+
+    # Navigation info - show rank
+    nav_info = f"Rank {rank_num}"
+
+    # Navigation buttons state
+    prev_dis = current_index <= 0
+    next_dis = current_index >= len(candidate_attributions) - 1
+
+    return (graph, {'display': 'block', 'padding': '0.25rem'}, nav_info, prev_dis, next_dis)
+
+
+# ------------------------------------------------------------
+# Navigation for Token Attribution
+# ------------------------------------------------------------
+
+@callback(
+    Output('token-attribution-index', 'data'),
+    [Input('ta-prev-btn', 'n_clicks'),
+     Input('ta-next-btn', 'n_clicks')],
+    [State('token-attribution-index', 'data'),
+     State('saliency-data', 'data')],
+    prevent_initial_call=True
+)
+def navigate_token_attribution(prev_clicks, next_clicks, current_index, saliency_data):
+    """Handle prev/next navigation for token attribution charts."""
+    if not saliency_data or 'text_attribution' not in saliency_data:
+        raise PreventUpdate
+    
+    # Determine total candidates – prefer saliency pairs order when available
+    text_attr = saliency_data.get('text_attribution', {})
+
+    if _current_pairs:
+        # Only count pairs that have matching attribution data
+        cand_keys = set(text_attr.get('candidates', {}).keys())
+        match_count = 0
+        for _, _, _, pair_name in _current_pairs:
+            stem = Path(pair_name).stem
+            if pair_name in cand_keys or stem in cand_keys:
+                match_count += 1
+        total_candidates = match_count if match_count else len(text_attr.get('candidates', {}))
+    else:
+        total_candidates = len(text_attr.get('candidates', {}))
+    
+    if total_candidates == 0:
+        raise PreventUpdate
+    
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    
+    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if button_id == 'ta-prev-btn' and current_index > 0:
+        return current_index - 1
+    elif button_id == 'ta-next-btn' and current_index < total_candidates - 1:
+        return current_index + 1
+    
+    return current_index
+
+@callback(
+    Output('token-attribution-index', 'data', allow_duplicate=True),
+    Input('saliency-data', 'data'),
+    prevent_initial_call=True
+)
+def reset_token_attr_index_on_new_data(_):
+    """Reset token-attribution index when new saliency-data arrives."""
+    return 0 
