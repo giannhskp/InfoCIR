@@ -71,6 +71,10 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-search-status', 'children'),
      Output('cir-search-data', 'data'),
      Output('cir-toggle-button', 'style', allow_duplicate=True),
+     Output('cir-toggle-button', 'disabled', allow_duplicate=True),
+     Output('cir-toggle-button', 'children', allow_duplicate=True),
+     Output('cir-toggle-button', 'color', allow_duplicate=True),
+     Output('cir-toggle-state', 'data', allow_duplicate=True),
      Output('cir-run-button', 'style'),
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
@@ -93,9 +97,25 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
     if not upload_contents or not text_prompt:
         from src.widgets import histogram
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
-        # Show Run CIR button, hide visualize button, clear enhance results and data, reset viz mode
-        # Always return empty histogram/wordcloud when no search is performed
-        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None, [], histogram.draw_histogram(None)
+        # No search yet → keep Visualize button disabled, ensure Run-CIR hidden.
+        return (
+            empty,                 # cir-results
+            html.Div(),            # cir-search-status
+            None,                  # cir-search-data
+            no_update,             # cir-toggle-button style (unchanged)
+            True,                  # cir-toggle-button disabled
+            'Visualize CIR results',  # cir-toggle-button text
+            'success',             # cir-toggle-button color
+            False,                 # cir-toggle-state OFF
+            {'display': 'none'},   # cir-run-button style
+            [],                    # cir-enhance-results
+            None,                  # cir-enhanced-prompts-data
+            False,                 # viz-mode
+            [],                    # viz-selected-ids
+            None,                  # saliency-data
+            [],                    # wordcloud
+            histogram.draw_histogram(None)  # histogram figure
+        )
     try:
         print(f"Starting CIR search with model: {selected_model}, prompt: '{text_prompt}', top_n: {top_n}")
         
@@ -359,15 +379,49 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             hist = histogram.draw_histogram(None)  # Empty histogram when visualization is OFF
         
         print("CIR search callback completed successfully")
-        # Show visualize button, hide Run CIR, clear enhance data, reset viz mode to OFF
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, False, [], saliency_summary, wc, hist
+        # Auto-enable Visualize button (set ON) and keep Run-CIR hidden, reset viz-related stores
+        return (
+            results_div,               # cir-results
+            status,                    # cir-search-status
+            store_data,                # cir-search-data
+            no_update,                 # cir-toggle-button style (unchanged)
+            False,                     # cir-toggle-button disabled – enabled for interaction
+            'Hide CIR results',        # cir-toggle-button text (now ON)
+            'warning',                 # cir-toggle-button color
+            True,                      # cir-toggle-state – ON
+            {"display": "none"},     # cir-run-button style – remain hidden
+            [],                        # cir-enhance-results
+            None,                      # cir-enhanced-prompts-data
+            False,                     # viz-mode – OFF by default
+            [],                        # viz-selected-ids
+            saliency_summary,          # saliency-data
+            wc,                        # wordcloud
+            hist                       # histogram figure
+        )
     except Exception as e:
         print(f"CIR search error: {e}")
         import traceback
         traceback.print_exc()
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        # On error, hide visualize button, show Run CIR, clear enhance results and data, reset viz mode
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None, [], histogram.draw_histogram(None)
+        # On error, keep Visualize button disabled and Run-CIR hidden
+        return (
+            html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"),  # cir-results
+            err,                         # cir-search-status
+            None,                        # cir-search-data
+            no_update,                   # cir-toggle-button style
+            True,                        # cir-toggle-button disabled
+            'Visualize CIR results',     # button text
+            'success',                   # button color
+            False,                       # cir-toggle-state OFF
+            {"display": "none"},        # cir-run-button style – hidden
+            [],                          # cir-enhance-results
+            None,                        # cir-enhanced-prompts-data
+            False,                       # viz-mode
+            [],                          # viz-selected-ids
+            None,                        # saliency-data
+            [],                          # wordcloud
+            histogram.draw_histogram(None)  # histogram figure
+        )
 
 # Button toggle callback for CIR visualization
 @callback(
@@ -1245,6 +1299,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     Output('cir-toggle-button', 'children', allow_duplicate=True),
     Output('cir-toggle-button', 'color', allow_duplicate=True),
     Output('cir-toggle-button', 'style', allow_duplicate=True),
+    Output('cir-toggle-button', 'disabled', allow_duplicate=True),
     Output('cir-toggle-state', 'data', allow_duplicate=True),
     Output('viz-mode', 'data', allow_duplicate=True),
     Output('viz-selected-ids', 'data', allow_duplicate=True),
@@ -1258,11 +1313,12 @@ def clear_results_on_model_change(_):
         html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"),
         'Visualize CIR results',
         'success',
-        {'display': 'none', 'color': 'black'},
-        False,
+        no_update,
+        True,   # keep disabled as there are no results
+        False,  # Reset viz-mode toggle state
         False,  # Reset viz-mode to OFF
         [],     # Clear viz-selected-ids
-        {'display': 'block', 'color': 'black'}
+        {'display': 'none'}
     )
 
 # -----------------------------------------------------------------------------
