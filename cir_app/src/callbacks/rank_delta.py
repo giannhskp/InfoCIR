@@ -37,11 +37,19 @@ def _get_thumbnail_src(img_path: str, max_size: int = 60) -> str:
     Output("rank-delta-content", "children"),
     Input("cir-enhanced-prompts-data", "data"),          # newly generated / updated prompts
     Input("prompt-selection", "value"),                  # currently selected prompt index (or -1 / None)
+    Input("cir-toggle-state", "data"),                   # CIR visualization toggle state
     State("cir-search-data", "data"),
     prevent_initial_call=True,
 )
-def update_rank_delta_matrix(enhanced_data, selected_idx, search_data):
+def update_rank_delta_matrix(enhanced_data, selected_idx, cir_toggle_state, search_data):
     """Compute and render the Rank-Δ matrix once enhanced prompts are available."""
+    # Only show rank-delta matrix when CIR results are being visualized
+    if not cir_toggle_state:
+        return html.Div([
+            html.I(className="fas fa-eye-slash text-muted me-2"),
+            "Enable visualization to view the rank-Δ matrix."
+        ], className="text-muted p-4 text-center")
+    
     if not enhanced_data or not search_data:
         return html.Div([
             html.I(className="fas fa-table text-muted me-2"),
