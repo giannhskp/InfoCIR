@@ -270,20 +270,23 @@ def run_ui():
             dbc.Stack([
                 projection_radio_buttons_widget,
                 html.Div([
+                    # Hidden placeholder for legacy callbacks – kept for ID consistency
                     html.A(
-                        dbc.Button('Run CIR', 
+                        dbc.Button('Run CIR',
                                    id='cir-run-button',
                                    color='info',
                                    class_name='header-button',
-                                   style={'display': 'block', 'color': 'black'}),
+                                   style={'display': 'none'}),
                         href='#cir-interface',
-                        style={'textDecoration': 'none'}
+                        style={'textDecoration': 'none', 'display': 'none'}
                     ),
+                    # Visualize button is always visible but starts disabled until results are available
                     dbc.Button('Visualize CIR results', 
                                id='cir-toggle-button',
                                color="success",
                                class_name="header-button",
-                               style={'display': 'none', 'color': 'black'}),
+                               disabled=True,
+                               style={'display': 'block', 'color': 'black'}),
                     dbc.Button('Deselect everything', 
                                id='deselect-button', 
                                class_name="btn btn-outline-primary header-button"),
