@@ -76,21 +76,26 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
      Output('viz-mode', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('saliency-data', 'data')],
+     Output('saliency-data', 'data'),
+     Output('wordcloud', 'list', allow_duplicate=True),
+     Output('histogram', 'figure', allow_duplicate=True)],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'),
      State('cir-text-prompt', 'value'),
      State('cir-top-n', 'value'),
-     State('custom-dropdown', 'value')],
+     State('custom-dropdown', 'value'),
+     State('cir-toggle-state', 'data')],
     prevent_initial_call=True
 )
-def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model):
+def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model, current_toggle_state):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     top_n = int(top_n)
     if not upload_contents or not text_prompt:
+        from src.widgets import histogram
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
         # Show Run CIR button, hide visualize button, clear enhance results and data, reset viz mode
-        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None
+        # Always return empty histogram/wordcloud when no search is performed
+        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None, [], histogram.draw_histogram(None)
     try:
         print(f"Starting CIR search with model: {selected_model}, prompt: '{text_prompt}', top_n: {top_n}")
         
@@ -334,16 +339,35 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'original_results': [[str(name), float(score)] for (name, score) in results],
         }
         
+        # Calculate histogram and wordcloud based on current visualization state
+        from src.widgets import wordcloud, histogram
+        if current_toggle_state:  # If visualization is currently enabled
+            # Populate histogram and wordcloud with CIR results
+            counts = df.loc[topk_ids]['class_name'].value_counts()
+            if len(counts):
+                wg = wordcloud.wordcloud_weight_rescale(counts.values, 1, counts.max())
+                wc = sorted([[cn, w] for cn, w in zip(counts.index, wg)], key=lambda x: x[1], reverse=True)
+            else:
+                wc = []
+            
+            # Create histogram for CIR results
+            cir_df = df.loc[topk_ids]
+            hist = histogram.draw_histogram(cir_df)
+        else:
+            # Visualization is OFF - return empty widgets
+            wc = []  # Empty wordcloud when visualization is OFF
+            hist = histogram.draw_histogram(None)  # Empty histogram when visualization is OFF
+        
         print("CIR search callback completed successfully")
         # Show visualize button, hide Run CIR, clear enhance data, reset viz mode to OFF
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, False, [], saliency_summary
+        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, False, [], saliency_summary, wc, hist
     except Exception as e:
         print(f"CIR search error: {e}")
         import traceback
         traceback.print_exc()
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
         # On error, hide visualize button, show Run CIR, clear enhance results and data, reset viz mode
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None
+        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None, [], histogram.draw_histogram(None)
 
 # Button toggle callback for CIR visualization
 @callback(
