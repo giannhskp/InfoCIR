@@ -23,6 +23,7 @@ from src.widgets import gallery, wordcloud, histogram, scatterplot
 from src.callbacks.saliency_callbacks import load_and_resize_image  # Reuse efficient thumbnail loader
 from dash import no_update
 import copy
+import math
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -626,10 +627,46 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     prompts = list(set(prompts))
     print(f"Final prompts list: {prompts}")
 
+    # ----------------------------------------
+    # Helper metric functions (IR measures)
+    # ----------------------------------------
+    top_k = search_data['top_n']  # evaluation depth
+
+    def calculate_ndcg(ranks):
+        """Binary nDCG@k given 1-based ranks of the |selected_image_ids| relevant items
+        (using the cut-off k = top_k)."""
+        dcg = 0.0
+        for r in ranks:
+            if r <= top_k:
+                dcg += 1.0 / math.log2(r + 1)
+        m = len(selected_image_ids)
+        ideal_dcg = sum(1.0 / math.log2(i + 1 + 1) for i in range(min(m, top_k)))
+        return dcg / ideal_dcg if ideal_dcg > 0 else 0.0
+
+    def calculate_average_precision(ranks):
+        """Average-Precision@k (MAP for single query) – binary relevance."""
+        num_rel_seen = 0
+        precisions = []
+        for r in sorted(ranks):
+            if r > top_k:
+                continue
+            num_rel_seen += 1
+            precisions.append(num_rel_seen / r)
+        m = min(len(selected_image_ids), top_k)
+        return sum(precisions) / m if m > 0 else 0.0
+
+    def calculate_mrr(ranks):
+        """Reciprocal rank of the first relevant result (0 if none in top-k)."""
+        rr = min([r for r in ranks if r <= top_k], default=None)
+        return 1.0 / rr if rr is not None else 0.0
+
     # Score each candidate prompt and store full results
     coverages = []       # Fraction of ideal images retrieved within top-k (0–1)
     mean_ranks = []      # Average rank of the selected ideal images (lower is better)
     mean_sims = []       # Mean similarity of the selected ideal images (for additional insight)
+    ndcgs      = []      # Normalised Discounted Cumulative Gain@k (0–1)
+    aps        = []      # Average-Precision@k  (0–1)
+    mrrs       = []      # Mean Reciprocal Rank (0–1)
     all_prompt_results = []
     
     # Use saliency-enabled enhanced prompt processing
@@ -671,17 +708,33 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         coverage = retrieved_cnt / len(selected_image_ids)
         mean_rank = sum(ranks_for_prompt) / len(ranks_for_prompt)
         mean_sim = sum(sims_for_prompt) / len(sims_for_prompt)
+        ndcg = calculate_ndcg(ranks_for_prompt)
+        ap = calculate_average_precision(ranks_for_prompt)
+        mrr = calculate_mrr(ranks_for_prompt)
 
         coverages.append(coverage)
         mean_ranks.append(mean_rank)
         mean_sims.append(mean_sim)
+        ndcgs.append(ndcg)
+        aps.append(ap)
+        mrrs.append(mrr)
 
-    # Select best prompt: maximise coverage then minimise mean rank
-    best_idx = min(range(len(prompts)), key=lambda i: (-coverages[i], mean_ranks[i]))
+    # Select best prompt – optimise across metrics: nDCG ➜ AP ➜ Coverage ➜ Mean-rank
+    best_idx = min(
+        range(len(prompts)),
+        key=lambda i: (
+            -ndcgs[i],   # higher better
+            -aps[i],
+            -coverages[i],
+            mean_ranks[i]
+        )
+    )
     best_prompt = prompts[best_idx]
     best_coverage = coverages[best_idx]
     best_mean_rank = mean_ranks[best_idx]
-    print(f"Selected best prompt: '{best_prompt}' with coverage: {best_coverage:.2f}, mean rank: {best_mean_rank:.2f}")
+    best_ndcg = ndcgs[best_idx]
+    best_ap = aps[best_idx]
+    print(f"Selected best prompt: '{best_prompt}'  nDCG:{best_ndcg:.3f}  AP:{best_ap:.3f}  Coverage:{best_coverage:.2f}")
 
     # Get results for best prompt (already computed)
     full_results = all_prompt_results[best_idx]
@@ -706,7 +759,11 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
 
     # Create enhanced table rows with highlighting for best prompt and action buttons
     table_rows = []
-    for i, (p, cov) in enumerate(zip(prompts, coverages)):
+    for i in range(len(prompts)):
+        p = prompts[i]
+        cov = coverages[i]
+        ndcg_val = ndcgs[i]
+        ap_val = aps[i]
         view_button = dbc.Button(
             [html.I(className="fas fa-eye me-1"), "View"],
             id={'type': 'enhanced-prompt-view', 'index': i},
@@ -718,15 +775,17 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         if i == best_idx:  # Highlight best prompt
             row = html.Tr([
                 html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
+                html.Td([html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-success")]),
+                html.Td([html.Span(f"{ap_val*100:.0f}%", className="badge bg-success")]),
                 html.Td([html.Span(f"{int(cov*100)}%", className="badge bg-success")]),
-                html.Td([html.Span(f"{mean_ranks[i]:.1f}", className="badge bg-success")]),
                 html.Td(view_button)
             ], className="table-success")
         else:
             row = html.Tr([
                 html.Td(p),
+                html.Td(html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-secondary")),
+                html.Td(html.Span(f"{ap_val*100:.0f}%", className="badge bg-secondary")),
                 html.Td(html.Span(f"{int(cov*100)}%", className="badge bg-secondary")),
-                html.Td(html.Span(f"{mean_ranks[i]:.1f}", className="badge bg-secondary")),
                 html.Td(view_button)
             ])
         table_rows.append(row)
@@ -735,8 +794,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     candidates_table = dbc.Table([
         html.Thead(html.Tr([
             html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
+            html.Th([html.I(className="fas fa-chart-line me-2"), "nDCG"], className="bg-light"),
+            html.Th([html.I(className="fas fa-percentage me-2"), "AP"], className="bg-light"),
             html.Th([html.I(className="fas fa-bullseye me-2"), "Coverage"], className="bg-light"),
-            html.Th([html.I(className="fas fa-list-ol me-2"), "Mean Rank"], className="bg-light"),
             html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
         ]), className="thead-light"),
         html.Tbody(table_rows)
@@ -790,7 +850,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         dbc.Alert([
             html.H6([html.I(className="fas fa-trophy text-warning me-2"), "Selected Best Prompt"], className="alert-heading mb-2"),
             html.P(f'"{best_prompt}"', className="mb-1 font-monospace"),
-            html.Small(f"Mean Rank: {best_mean_rank:.2f} | Mean Sim: {mean_sims[best_idx]:.4f}", className="text-muted")
+            html.Small(f"nDCG: {best_ndcg*100:.0f}% | AP: {best_ap*100:.0f}% | Coverage: {best_coverage*100:.0f}%", className="text-muted")
         ], color="light", className="border-start border-warning border-4"),
         
         # Results section
@@ -819,6 +879,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         'coverages': coverages,
         'mean_ranks': mean_ranks,
         'mean_sims': mean_sims,
+        'ndcgs': ndcgs,
+        'aps': aps,
+        'mrrs': mrrs,
         'all_results': all_prompt_results,
         'best_idx': best_idx,
         'currently_viewing': best_idx,  # Default to showing best prompt results
@@ -861,6 +924,9 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     coverages = enhanced_data['coverages']
     mean_ranks = enhanced_data['mean_ranks']
     mean_sims = enhanced_data['mean_sims']
+    ndcgs = enhanced_data['ndcgs']
+    aps = enhanced_data['aps']
+    mrrs = enhanced_data['mrrs']
     all_results = enhanced_data['all_results']
     best_idx = enhanced_data['best_idx']
     
@@ -868,6 +934,9 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     clicked_coverage = coverages[clicked_index]
     clicked_mean_rank = mean_ranks[clicked_index]
     clicked_mean_sim = mean_sims[clicked_index]
+    clicked_ndcg = ndcgs[clicked_index]
+    clicked_ap = aps[clicked_index]
+    clicked_mrr = mrrs[clicked_index]
     clicked_results = all_results[clicked_index]
     
     # Build image cards for the clicked prompt results
@@ -904,7 +973,8 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     table_rows = []
     for i, p in enumerate(prompts):
         cov = coverages[i]
-        mean_rank_val = mean_ranks[i]
+        ndcg_val = ndcgs[i]
+        ap_val = aps[i]
         # Highlight the currently viewing button
         if i == clicked_index:
             button_color = "primary"
@@ -927,15 +997,17 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
         if i == best_idx:  # Highlight best prompt row
             row = html.Tr([
                 html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
+                html.Td([html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-success")]),
+                html.Td([html.Span(f"{ap_val*100:.0f}%", className="badge bg-success")]),
                 html.Td([html.Span(f"{int(cov*100)}%", className="badge bg-success")]),
-                html.Td([html.Span(f"{mean_rank_val:.1f}", className="badge bg-success")]),
                 html.Td(view_button)
             ], className="table-success")
         else:
             row = html.Tr([
                 html.Td(p),
+                html.Td(html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-secondary")),
+                html.Td(html.Span(f"{ap_val*100:.0f}%", className="badge bg-secondary")),
                 html.Td(html.Span(f"{int(cov*100)}%", className="badge bg-secondary")),
-                html.Td(html.Span(f"{mean_rank_val:.1f}", className="badge bg-secondary")),
                 html.Td(view_button)
             ])
         table_rows.append(row)
@@ -944,8 +1016,9 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     candidates_table = dbc.Table([
         html.Thead(html.Tr([
             html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
+            html.Th([html.I(className="fas fa-chart-line me-2"), "nDCG"], className="bg-light"),
+            html.Th([html.I(className="fas fa-percentage me-2"), "AP"], className="bg-light"),
             html.Th([html.I(className="fas fa-bullseye me-2"), "Coverage"], className="bg-light"),
-            html.Th([html.I(className="fas fa-list-ol me-2"), "Mean Rank"], className="bg-light"),
             html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
         ]), className="thead-light"),
         html.Tbody(table_rows)
@@ -972,7 +1045,7 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
                 "Currently Viewing" if clicked_index != best_idx else "Selected Best Prompt"
             ], className="alert-heading mb-2"),
             html.P(f'"{clicked_prompt}"', className="mb-1 font-monospace"),
-            html.Small(f"Mean Rank: {clicked_mean_rank:.2f} | Mean Sim: {clicked_mean_sim:.4f}", className="text-muted")
+            html.Small(f"nDCG: {clicked_ndcg*100:.0f}% | AP: {clicked_ap*100:.0f}% | Coverage: {clicked_coverage*100:.0f}%", className="text-muted")
         ], color="light" if clicked_index != best_idx else "light", 
            className="border-start border-info border-4" if clicked_index != best_idx else "border-start border-warning border-4"),
         
@@ -1002,11 +1075,14 @@ def populate_prompt_enhancement_tab(enhanced_data):
     coverages = enhanced_data.get('coverages', [])
     mean_ranks = enhanced_data.get('mean_ranks', [])
     mean_sims = enhanced_data.get('mean_sims', [])
+    ndcgs = enhanced_data.get('ndcgs', [])
+    aps = enhanced_data.get('aps', [])
+    mrrs = enhanced_data.get('mrrs', [])
     best_idx = enhanced_data.get('best_idx')
     
     # Create styled cards for each enhanced prompt
     cards = []
-    for i, (prompt, cov, mean_rank, mean_sim) in enumerate(zip(prompts, coverages, mean_ranks, mean_sims)):
+    for i, (prompt, cov, mean_rank, mean_sim, ndcg, ap, mrr) in enumerate(zip(prompts, coverages, mean_ranks, mean_sims, ndcgs, aps, mrrs)):
         is_best = (i == best_idx)
         
         # Card classes and styling
@@ -1030,6 +1106,18 @@ def populate_prompt_enhancement_tab(enhanced_data):
             f"{mean_sim:.4f}", 
             className="prompt-metric-badge bg-success text-white"
         )
+        ndcg_badge = html.Span(
+            f"{ndcg:.4f}", 
+            className="prompt-metric-badge bg-info text-white"
+        )
+        ap_badge = html.Span(
+            f"{ap:.4f}", 
+            className="prompt-metric-badge bg-warning text-white"
+        )
+        # mrr_badge = html.Span(
+        #     f"{mrr:.4f}", 
+        #     className="prompt-metric-badge bg-danger text-white"
+        # )
         
         card = html.Div([
             dbc.Card([
@@ -1043,10 +1131,12 @@ def populate_prompt_enhancement_tab(enhanced_data):
                         html.Div([
                             html.Span("Coverage ", className="prompt-metric-label"),
                             coverage_badge,
-                            html.Span(" Mean Rank ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
-                            mean_rank_badge,
-                            html.Span(" Mean Sim ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
-                            mean_sim_badge
+                            html.Span(" nDCG ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                            ndcg_badge,
+                            html.Span(" AP ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                            ap_badge,
+                            # html.Span(" MRR ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                            # mrr_badge
                         ], className="prompt-card-metrics")
                     ], className="prompt-card-header"),
                     
