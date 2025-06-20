@@ -326,20 +326,29 @@ def run_ui():
                                 ], className='d-flex align-items-center'),
                             ),
                             dbc.CardBody([
-                                html.Div(id='prompt-enhancement-content', style={'overflowY':'auto', 'flex':'1 1 auto'}),
+                                html.Div(id='prompt-enhancement-content', style={'overflow': 'auto', 'flex': '1 1 auto', 'minHeight': 0}),
                                 dcc.RadioItems(id='prompt-selection', options=[], value=None, style={'display':'none'})
-                            ], style={'padding': '0.5rem', 'height': '100%', 'display': 'flex', 'flexDirection': 'column'}),
-                        ], id='prompt-enh-card', className='border-widget', style={'flex':'1 1 25%', 'overflow':'auto'}),
+                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem'}),
+                        ], id='prompt-enh-card', className='border-widget', style={'flex': '1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'height': '25%', 'maxHeight': '25%', 'overflow': 'auto'}),
 
                         dbc.Card([
                             dbc.CardHeader(
                                 html.Div([
                                     html.H6("Saliency", className="mb-0", style={'fontSize': '0.85rem'}),
+                                    html.Div([
+                                        dbc.Button([html.I(className="fas fa-chevron-left me-1"), "Prev"],
+                                                id='saliency-prev-btn', color='outline-primary', size='sm', disabled=True, style={'fontSize': '0.6rem', 'padding': '0.2rem 0.4rem'}),
+                                        html.Span(id='saliency-current-info', className='mx-2 text-muted small fw-bold', style={'fontSize': '0.6rem'}),
+                                        dbc.Button(["Next ", html.I(className="fas fa-chevron-right ms-1")],
+                                                id='saliency-next-btn', color='outline-primary', size='sm', disabled=True, style={'fontSize': '0.6rem', 'padding': '0.2rem 0.4rem'})
+                                    ], className="d-flex align-items-center ms-3", id='saliency-navigation-controls'),
+
                                     dbc.Button(
                                         html.I(className="fas fa-expand fa-xs"),
                                         id='saliency-expand-btn',
                                         size='sm',
                                         color='outline-secondary',
+                                        className='ms-auto',
                                         style={
                                             'padding': '0.1rem',
                                             'height': '1.0rem',
@@ -350,34 +359,34 @@ def run_ui():
                                             'alignItems': 'center',
                                             'justifyContent': 'center'
                                         },
-                                        class_name='ms-auto'
                                     )
-                                ], className='d-flex align-items-center'),
+                                ], className='d-flex align-items-center')
                             ),
                             dbc.CardBody([
-                                html.Div(id='saliency-content', style={'flex':'1 1 auto', 'minHeight': '0'}),
-                            ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': 'calc(100% - 45px)'}),
-                            html.Div(id='saliency-navigation', children=[
-                                html.Div([
-                                    dbc.Button([html.I(className="fas fa-chevron-left me-1"), "Prev"],
-                                               id='saliency-prev-btn', color='outline-primary', size='sm', disabled=True),
-                                    html.Span(id='saliency-current-info', className='mx-2 text-muted small fw-bold'),
-                                    dbc.Button(["Next ", html.I(className="fas fa-chevron-right ms-1")],
-                                               id='saliency-next-btn', color='outline-primary', size='sm', disabled=True)
-                                ], className='d-flex align-items-center justify-content-center gap-1 saliency-navigation-controls')
-                            ], style={'display':'none', 'padding': '0.25rem', 'height': '45px', 'flexShrink': '0'})
-                        ], id='saliency-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '0'}),
+                                html.Div(id='saliency-content', style={'overflow': 'auto', 'flex':'1 1 auto', 'minHeight': '0'}),
+                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem'}),
+                        ], id='saliency-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'height': '100%', 'maxHeight': '25%', 'overflow': 'auto'}),
 
                         # Token Attribution card with fullscreen capability
                         dbc.Card([
                             dbc.CardHeader(
                                 html.Div([
                                     html.H6("Token Attribution", className="mb-0", style={'fontSize': '0.85rem'}),
+
+                                    html.Div([
+                                        dbc.Button([html.I(className="fas fa-chevron-left me-1"), "Prev"],
+                                                id='ta-prev-btn', color='outline-primary', size='sm', disabled=True, style={'fontSize': '0.6rem', 'padding': '0.2rem 0.4rem'}),
+                                        html.Span(id='token-attribution-current-info', className='mx-2 text-muted small fw-bold', style={'fontSize': '0.6rem'}),
+                                        dbc.Button(["Next ", html.I(className="fas fa-chevron-right ms-1")],
+                                                id='ta-next-btn', color='outline-primary', size='sm', disabled=True, style={'fontSize': '0.6rem', 'padding': '0.2rem 0.4rem'})
+                                    ], className="d-flex align-items-center ms-3", id='token-attribution-controls'),
+
                                     dbc.Button(
                                         html.I(className="fas fa-expand fa-xs"),
                                         id='token-attr-expand-btn',
                                         size='sm',
                                         color='outline-secondary',
+                                        className='ms-auto',
                                         style={
                                             'padding': '0.1rem',
                                             'height': '1.0rem',
@@ -388,23 +397,13 @@ def run_ui():
                                             'alignItems': 'center',
                                             'justifyContent': 'center'
                                         },
-                                        class_name='ms-auto'
-                                    ),
-                                ], className='d-flex align-items-center'),
+                                    )
+                                ], className='d-flex align-items-center')
                             ),
                             dbc.CardBody([
-                                html.Div(id='token-attribution-content', style={'flex':'1 1 auto', 'minHeight': '0', 'overflowY': 'auto', 'overflowX': 'hidden'})
-                            ], style={'padding': '0.25rem', 'paddingBottom': '0', 'display': 'flex', 'flexDirection': 'column', 'height': 'calc(100% - 45px)'}),
-                            html.Div(id='token-attribution-navigation', children=[
-                                html.Div([
-                                    dbc.Button([html.I(className="fas fa-chevron-left me-1"), "Prev"],
-                                               id='ta-prev-btn', color='outline-primary', size='sm', disabled=True),
-                                    html.Span(id='token-attribution-current-info', className='mx-2 text-muted small fw-bold'),
-                                    dbc.Button(["Next ", html.I(className="fas fa-chevron-right ms-1")],
-                                               id='ta-next-btn', color='outline-primary', size='sm', disabled=True)
-                                ], className='d-flex align-items-center justify-content-center gap-1 saliency-navigation-controls')
-                            ], style={'display':'none', 'padding': '0.25rem', 'height': '45px', 'flexShrink': '0'}),
-                        ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '0'}),
+                                html.Div(id='token-attribution-content', style={'overflow': 'auto', 'flex': '1 1 auto', 'minHeight': 0})
+                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem'}),
+                        ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'height': '100%', 'maxHeight': '25%', 'overflow': 'auto'}),
 
                         dbc.Card([
                             dbc.CardHeader(
@@ -430,9 +429,9 @@ def run_ui():
                                 ], className='d-flex align-items-center'),
                             ),
                             dbc.CardBody([
-                                html.Div(id='rank-delta-content', style={'flex':'1 1 auto'})
-                            ]),
-                        ], id='rank-delta-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'overflow':'auto'})
+                                html.Div(id='rank-delta-content', style={'overflow': 'auto', 'flex': '1 1 auto', 'minHeight': 0})
+                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem'}),
+                        ], id='rank-delta-card', className='border-widget mt-2', style={'flex': '1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'height': '100%', 'maxHeight': '25%', 'overflow': 'auto'})
                     ], className='d-flex flex-column h-100'),
                     width=3, className='main-col'
                 )
@@ -493,7 +492,15 @@ def run_ui():
             # Store for card ID
             dcc.Store(id='card-id', data=None),
             # Store for token attribution index in the list of dcc.Store components (search for saliency-data store area)
-            dcc.Store(id='token-attribution-index', data=0)
+            dcc.Store(id='token-attribution-index', data=0),
+            # Before fullscreen styles
+            dcc.Store(id='cir-results-card-style'),
+            dcc.Store(id='hist-wh-card-style'),
+            dcc.Store(id='prompt-enh-card-style'),
+            dcc.Store(id='rank-delta-card-style'),
+            dcc.Store(id='token-attr-card-style'),
+            dcc.Store(id='cir-controls-card-style'),
+            dcc.Store(id='saliency-card-style')
         ], fluid=True, id='container'),
         style={'minHeight': '100vh', 'overflowY': 'auto', 'overflowX': 'hidden'}
     )
