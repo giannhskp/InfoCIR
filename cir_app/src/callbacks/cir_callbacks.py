@@ -1063,10 +1063,11 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     [Output('prompt-enhancement-content', 'children'),
      Output('prompt-selection', 'options'),
      Output('prompt-selection', 'value')],
-    Input('cir-enhanced-prompts-data', 'data'),
+    [Input('cir-enhanced-prompts-data', 'data'),
+     Input('prompt-enh-fullscreen', 'data')],
     prevent_initial_call=True
 )
-def populate_prompt_enhancement_tab(enhanced_data):
+def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
     """Populate the prompt enhancement tab when new enhanced prompts are available"""
     if not enhanced_data:
         # Clear prompt enhancement tab when starting a new CIR query or no enhancement data
@@ -1079,6 +1080,9 @@ def populate_prompt_enhancement_tab(enhanced_data):
     aps = enhanced_data.get('aps', [])
     mrrs = enhanced_data.get('mrrs', [])
     best_idx = enhanced_data.get('best_idx')
+    
+    # Normalise fullscreen flag (None -> False)
+    is_fullscreen = bool(is_fullscreen)
     
     # Create styled cards for each enhanced prompt
     cards = []
@@ -1093,31 +1097,37 @@ def populate_prompt_enhancement_tab(enhanced_data):
         icon_class = "fas fa-crown text-warning" if is_best else "fas fa-magic text-info"
         title_text = "Best" if is_best else f"#{i+1}"
         
-        # Metrics badges with better styling
-        coverage_badge = html.Span(
-            f"{cov*100:.0f}%", 
-            className="prompt-metric-badge bg-primary text-white"
-        )
-        mean_rank_badge = html.Span(
-            f"{mean_rank:.2f}", 
-            className="prompt-metric-badge bg-secondary text-white"
-        )
-        mean_sim_badge = html.Span(
-            f"{mean_sim:.4f}", 
-            className="prompt-metric-badge bg-success text-white"
-        )
-        ndcg_badge = html.Span(
-            f"{ndcg:.4f}", 
-            className="prompt-metric-badge bg-info text-white"
-        )
-        ap_badge = html.Span(
-            f"{ap:.4f}", 
-            className="prompt-metric-badge bg-warning text-white"
-        )
-        # mrr_badge = html.Span(
-        #     f"{mrr:.4f}", 
-        #     className="prompt-metric-badge bg-danger text-white"
-        # )
+        # Metric badges
+        coverage_badge = html.Span(f"{cov*100:.0f}%", className="prompt-metric-badge bg-primary text-white")
+        mean_rank_badge = html.Span(f"{mean_rank:.2f}", className="prompt-metric-badge bg-secondary text-white")
+        mean_sim_badge = html.Span(f"{mean_sim:.4f}", className="prompt-metric-badge bg-success text-white")
+        ndcg_badge = html.Span(f"{ndcg:.4f}", className="prompt-metric-badge bg-info text-white")
+        ap_badge = html.Span(f"{ap:.4f}", className="prompt-metric-badge bg-warning text-white")
+        mrr_badge = html.Span(f"{mrr:.4f}", className="prompt-metric-badge bg-danger text-white")
+        
+        # ----------------------------------------------------------------
+        # Build metric badge row – show ALL metrics when fullscreen else
+        # show the compact subset (Coverage, nDCG, AP).
+        # ----------------------------------------------------------------
+        metric_children = [
+            html.Span("Coverage ", className="prompt-metric-label"),
+            coverage_badge,
+            html.Span(" nDCG ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+            ndcg_badge,
+            html.Span(" AP ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+            ap_badge,
+        ]
+
+        if is_fullscreen:
+            # Append the extra metrics when in fullscreen
+            metric_children.extend([
+                html.Span(" Mean Rank ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                mean_rank_badge,
+                html.Span(" Mean Sim ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                mean_sim_badge,
+                html.Span(" MRR ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                mrr_badge,
+            ])
         
         card = html.Div([
             dbc.Card([
@@ -1128,16 +1138,7 @@ def populate_prompt_enhancement_tab(enhanced_data):
                             html.I(className=f"{icon_class} prompt-card-icon"),
                             html.Span(title_text, className="prompt-card-title")
                         ], style={'display': 'flex', 'alignItems': 'center'}),
-                        html.Div([
-                            html.Span("Coverage ", className="prompt-metric-label"),
-                            coverage_badge,
-                            html.Span(" nDCG ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
-                            ndcg_badge,
-                            html.Span(" AP ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
-                            ap_badge,
-                            # html.Span(" MRR ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
-                            # mrr_badge
-                        ], className="prompt-card-metrics")
+                        html.Div(metric_children, className="prompt-card-metrics")
                     ], className="prompt-card-header"),
                     
                     # Prompt text with improved styling
