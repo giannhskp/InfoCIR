@@ -92,7 +92,7 @@ def perform_enhanced_prompt_cir_with_saliency(
     temp_image_path: str,
     enhanced_prompts: list,
     top_n: int,
-    selected_image_id: str,
+    selected_image_ids: list,
     base_save_dir: Optional[str] = None
 ) -> Tuple[list, Optional[Dict]]:
     """
@@ -102,7 +102,7 @@ def perform_enhanced_prompt_cir_with_saliency(
         temp_image_path: Path to the temporary uploaded image
         enhanced_prompts: List of enhanced prompt strings
         top_n: Number of top results to return per prompt
-        selected_image_id: ID of the selected target image
+        selected_image_ids: List of IDs of the selected target images
         base_save_dir: Optional base directory for saving saliency data
     
     Returns:

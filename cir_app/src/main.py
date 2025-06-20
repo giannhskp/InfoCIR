@@ -463,8 +463,8 @@ def run_ui():
             dcc.Store(id='selected-image-data', data=None),
             # Store for selected gallery image IDs (for highlighting in images tab)
             dcc.Store(id='selected-gallery-image-ids', data=[]),
-            # Store for the selected CIR result image ID to support prompt enhancement
-            dcc.Store(id='cir-selected-image-id', data=None),
+            # Store for the selected CIR result image IDs (supports multiple selections) to support prompt enhancement
+            dcc.Store(id='cir-selected-image-ids', data=[]),
             # Store for enhanced prompts data and results
             dcc.Store(id='cir-enhanced-prompts-data', data=None),
             # Store for visualization toggle state
