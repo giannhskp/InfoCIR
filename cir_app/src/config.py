@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-# UI configuration
+# UI CONFIGURATION
 IMAGE_GALLERY_SIZE = 24
 IMAGE_GALLERY_ROW_SIZE = 4
 
@@ -16,18 +16,46 @@ SELECTED_IMAGE_COLOR = 'green'  # Color for the specifically selected image
 SELECTED_CLASS_COLOR = 'red'    # Color for other images of the same class as selected image
 
 MAX_IMAGES_ON_SCATTERPLOT = 100
-
 DEFAULT_PROJECTION = 'UMAP'
 
 # Server configuration
-PORT = 8051  # Port number for the Dash application
+PORT = 8052  # Port number for the Dash application
 
 # Dataset configuration
-DATASET_SAMPLE_SIZE = 1000  # Sample size from dataset
+DATASET_SAMPLE_SIZE = 30000  # Sample size from dataset
+
+# NEW UMAP CONFIGURATION - Enhanced UMAP with debiasing techniques
+USE_NEW_UMAP = True  # Set to True to use the new enhanced UMAP implementation, False for original
+
+# NEW UMAP Parameters (based on optimal command)
+NEW_UMAP_CONFIG = {
+    # Basic UMAP parameters
+    'pca_components': 80,
+    'n_neighbors': 25,
+    'min_dist': 0.1,
+    'spread': 55.0,
+    'target_weight': 0.3,
+    'local_connectivity': 3.0,
+    'n_epochs': 1200,
+    
+    # Debiasing techniques
+    'style_debiasing': True,
+    'contrastive_debiasing': True,
+    'contrastive_weight': 0.7,
+    'alternative_projection': 'ica',
+    'semantic_enhancement': False,
+    'augment_embeddings': False,
+  
+    'force_approximation_algorithm': False,  # Force UMAP approximation algorithm
+    'enhanced_parameter_tuning': True,  # Apply enhanced parameter tuning for semantic clustering
+    'calculate_quality_metrics': True,  # Calculate comprehensive quality metrics
+    'use_hdbscan': False,  # Apply HDBSCAN clustering post-processing
+    'hdbscan_min_cluster_size': 10,  # Minimum cluster size for HDBSCAN
+}
 
 # Path configuration
 # You should set DATASET_ROOT_PATH to point to your actual dataset directory
-DATASET_ROOT_PATH = '/home/ikapetan/Frameworks/Projects-Master/MMA/data/imagenet-r'
+DATASET_ROOT_PATH = '/home/scur1151/multimedia-analytics/imagenet-r'
 
 # Working directory for processed data (relative to cir_app/)
 APP_DIR = Path(__file__).parent.parent  # cir_app/
