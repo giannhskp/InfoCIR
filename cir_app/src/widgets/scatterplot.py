@@ -239,7 +239,9 @@ def add_images_to_scatterplot(scatterplot_fig):
     return scatterplot_fig
 
 def create_scatterplot_figure(projection):
-    """Create scatterplot figure based on projection type"""
+    """Create scatterplot figure based on projection type (using go.Scatter)."""
+    df = Dataset.get()
+
     if projection == 't-SNE':
         x_col, y_col = 'tsne_x', 'tsne_y'
     elif projection == 'UMAP':
@@ -247,31 +249,41 @@ def create_scatterplot_figure(projection):
     else:
         raise Exception('Projection not found')
 
-    fig = px.scatter(data_frame=Dataset.get(), x=x_col, y=y_col)
-    fig.update_traces(
-        customdata=Dataset.get().index, 
-        marker={'color': config.SCATTERPLOT_COLOR},
-        unselected_marker_opacity=0.60
+    # Main scatter trace
+    scatter_trace = go.Scatter(
+        x=df[x_col],
+        y=df[y_col],
+        mode='markers',
+        name='image embedding',
+        customdata=df.index,
+        showlegend=False,
+        marker=dict(
+            color=config.SCATTERPLOT_COLOR,
+            size=7,
+            opacity=0.6,
+            symbol='circle'
+        ),
+        selected=dict(marker=dict(opacity=1)),
+        unselected=dict(marker=dict(opacity=0.6))
     )
-    fig.update_layout(dragmode='select')
-    fig.update_yaxes(scaleanchor="x", scaleratio=1)
-    
-    # NOTE: We do NOT add a legend trace for the "selected class" by default.
-    #       This trace is now dynamically created only when a class is actually
-    #       highlighted (e.g. after a histogram bar click or when an image is
-    #       selected). This avoids showing a stale legend entry when no class
-    #       is highlighted and guarantees that the legend colour always
-    #       reflects the value defined in the configuration file.
 
-    fig.update_layout(legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=1.02,
-        xanchor="left",
-        x=0
-    ))
+    # Create figure
+    fig = go.Figure(data=[scatter_trace])
 
-    # Keep the legend entry for the generic image embeddings.
+    fig.update_layout(
+        dragmode='select',
+        xaxis_title=x_col,
+        yaxis_title=y_col,
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="left",
+            x=0
+        )
+    )
+
     fig.add_trace(
         go.Scatter(
             x=[None],
@@ -279,8 +291,8 @@ def create_scatterplot_figure(projection):
             mode="markers",
             name='image embedding',
             marker=dict(size=7, color="blue", symbol='circle'),
-        ),
-    )
+        ))
+
     return fig
 
 def create_scatterplot(projection):

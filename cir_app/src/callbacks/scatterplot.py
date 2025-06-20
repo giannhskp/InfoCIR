@@ -51,7 +51,10 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, cir_toggle_state, 
             histogram_fig = histogram.draw_histogram(None)
             scatterplot_fig['layout']['images'] = []
             scatterplot_fig['data'][0]['marker'] = {'color': config.SCATTERPLOT_COLOR}
-            scatterplot_fig['data'] = scatterplot_fig['data'][:3]
+            scatterplot_fig['data'] = [
+                trace for trace in scatterplot_fig['data']
+                if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
+            ]
             return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None, []
         else:
             # Visualize action
@@ -59,7 +62,10 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, cir_toggle_state, 
             df = Dataset.get()
             topk_ids = search_data.get('topk_ids', [])
             top1_id = search_data.get('top1_id', None)
-            scatterplot_fig['data'] = scatterplot_fig['data'][:3]
+            scatterplot_fig['data'] = [
+                trace for trace in scatterplot_fig['data']
+                if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
+            ]
             scatterplot_fig['layout']['images'] = []
             main_trace = scatterplot_fig['data'][0]
             xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']

@@ -26,7 +26,10 @@ import src.callbacks.fullscreen
 
 def run_ui():
     """Run the Dash UI application"""
-    external_stylesheets = [dbc.themes.BOOTSTRAP]
+    external_stylesheets = [
+        dbc.themes.BOOTSTRAP,
+        "https://use.fontawesome.com/releases/v5.15.4/css/all.css"
+    ]
     app = Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
     
     # Create widgets
@@ -127,10 +130,20 @@ def run_ui():
             html.Div([
                 html.H6("Composed Image Retrieval", className="mb-0", style={'fontSize':'0.9rem'}),
                 dbc.Button(
-                    html.I(className="fas fa-expand"),
+                    html.I(className="fas fa-expand fa-xs"),
                     id='cir-controls-expand-btn',
                     size='sm',
                     color='outline-secondary',
+                    style={
+                        'padding': '0.1rem',
+                        'height': '1.0rem',
+                        'width': '1.0rem',
+                        'minWidth': 'auto',
+                        'lineHeight': '1',
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'center'
+                    },
                     class_name='ms-auto'
                 ),
             ], className='d-flex align-items-center'),
@@ -183,10 +196,20 @@ def run_ui():
             html.Div([
                 html.H6("Query Results", className="mb-0", style={'fontSize': '0.9rem'}),
                 dbc.Button(
-                    html.I(className="fas fa-expand"),
+                    html.I(className="fas fa-expand fa-xs"),
                     id='cir-results-expand-btn',
                     size='sm',
                     color='outline-secondary',
+                    style={
+                        'padding': '0.1rem',
+                        'height': '1.0rem',
+                        'width': '1.0rem',
+                        'minWidth': 'auto',
+                        'lineHeight': '1',
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'center'
+                    },
                     class_name='ms-auto'
                 ),
             ], className='d-flex align-items-center'),
@@ -207,10 +230,20 @@ def run_ui():
             html.Div([
                 html.H6("Histogram / Wordcloud", className="mb-0", style={'fontSize': '0.9rem'}),
                 dbc.Button(
-                    html.I(className="fas fa-expand"),
+                    html.I(className="fas fa-expand fa-xs"),
                     id='wh-expand-btn',
                     size='sm',
                     color='outline-secondary',
+                    style={
+                        'padding': '0.1rem',
+                        'height': '1.0rem',
+                        'width': '1.0rem',
+                        'minWidth': 'auto',
+                        'lineHeight': '1',
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'center'
+                    },
                     class_name='ms-auto'
                 ),
             ], className='d-flex align-items-center'),
@@ -271,10 +304,20 @@ def run_ui():
                                 html.Div([
                                     html.H6("Prompt Enhancement", className="mb-0", style={'fontSize': '0.85rem'}),
                                     dbc.Button(
-                                        html.I(className="fas fa-expand"),
+                                        html.I(className="fas fa-expand fa-xs"),
                                         id='prompt-enh-expand-btn',
                                         size='sm',
                                         color='outline-secondary',
+                                        style={
+                                            'padding': '0.1rem',
+                                            'height': '1.0rem',
+                                            'width': '1.0rem',
+                                            'minWidth': 'auto',
+                                            'lineHeight': '1',
+                                            'display': 'flex',
+                                            'alignItems': 'center',
+                                            'justifyContent': 'center'
+                                        },
                                         class_name='ms-auto'
                                     ),
                                 ], className='d-flex align-items-center'),
@@ -290,10 +333,20 @@ def run_ui():
                                 html.Div([
                                     html.H6("Saliency", className="mb-0", style={'fontSize': '0.85rem'}),
                                     dbc.Button(
-                                        html.I(className="fas fa-expand"),
+                                        html.I(className="fas fa-expand fa-xs"),
                                         id='saliency-expand-btn',
                                         size='sm',
                                         color='outline-secondary',
+                                        style={
+                                            'padding': '0.1rem',
+                                            'height': '1.0rem',
+                                            'width': '1.0rem',
+                                            'minWidth': 'auto',
+                                            'lineHeight': '1',
+                                            'display': 'flex',
+                                            'alignItems': 'center',
+                                            'justifyContent': 'center'
+                                        },
                                         class_name='ms-auto'
                                     )
                                 ], className='d-flex align-items-center'),
@@ -310,7 +363,7 @@ def run_ui():
                                                id='saliency-next-btn', color='outline-primary', size='sm', disabled=True)
                                 ], className='d-flex align-items-center justify-content-center gap-1 saliency-navigation-controls')
                             ], style={'display':'none', 'padding': '0.25rem', 'height': '45px', 'flexShrink': '0'})
-                        ], id='saliency-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}),
+                        ], id='saliency-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '0'}),
 
                         # Token Attribution card with fullscreen capability
                         dbc.Card([
@@ -318,10 +371,20 @@ def run_ui():
                                 html.Div([
                                     html.H6("Token Attribution", className="mb-0", style={'fontSize': '0.85rem'}),
                                     dbc.Button(
-                                        html.I(className="fas fa-expand"),
+                                        html.I(className="fas fa-expand fa-xs"),
                                         id='token-attr-expand-btn',
                                         size='sm',
                                         color='outline-secondary',
+                                        style={
+                                            'padding': '0.1rem',
+                                            'height': '1.0rem',
+                                            'width': '1.0rem',
+                                            'minWidth': 'auto',
+                                            'lineHeight': '1',
+                                            'display': 'flex',
+                                            'alignItems': 'center',
+                                            'justifyContent': 'center'
+                                        },
                                         class_name='ms-auto'
                                     ),
                                 ], className='d-flex align-items-center'),
@@ -338,17 +401,27 @@ def run_ui():
                                                id='ta-next-btn', color='outline-primary', size='sm', disabled=True)
                                 ], className='d-flex align-items-center justify-content-center gap-1 saliency-navigation-controls')
                             ], style={'display':'none', 'padding': '0.25rem', 'height': '45px', 'flexShrink': '0'}),
-                        ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}),
+                        ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '0'}),
 
                         dbc.Card([
                             dbc.CardHeader(
                                 html.Div([
                                     html.H6("Rank-Δ", className="mb-0", style={'fontSize': '0.85rem'}),
                                     dbc.Button(
-                                        html.I(className="fas fa-expand"),
+                                        html.I(className="fas fa-expand fa-xs"),
                                         id='rank-delta-expand-btn',
                                         size='sm',
                                         color='outline-secondary',
+                                        style={
+                                            'padding': '0.1rem',
+                                            'height': '1.0rem',
+                                            'width': '1.0rem',
+                                            'minWidth': 'auto',
+                                            'lineHeight': '1',
+                                            'display': 'flex',
+                                            'alignItems': 'center',
+                                            'justifyContent': 'center'
+                                        },
                                         class_name='ms-auto'
                                     ),
                                 ], className='d-flex align-items-center'),

@@ -43,7 +43,7 @@ def toggle_query_results_fullscreen(n_clicks, is_fullscreen):
     else:
         # Exit fullscreen – revert to original inline card style.
         style = {'flex': '1 1 25%', 'overflow': 'auto'}
-        btn_icon = html.I(className='fas fa-expand')
+        btn_icon = html.I(className='fas fa-expand', style={'fontSize': '0.2px'})
         btn_color = 'outline-secondary'
 
     return style, new_state, btn_icon, btn_color
@@ -72,7 +72,7 @@ def toggle_hist_wordcloud_fullscreen(n_clicks, is_fullscreen):
         btn_color = 'secondary'
     else:
         style = {'flex': '1 1 25%', 'overflow': 'auto'}
-        btn_icon = html.I(className='fas fa-expand')
+        btn_icon = html.I(className='fas fa-expand', style={'fontSize': '0.2px'})
         btn_color = 'outline-secondary'
 
     return style, new_state, btn_icon, btn_color
@@ -100,7 +100,7 @@ def toggle_prompt_enh_fullscreen(n_clicks, is_fullscreen):
         color = 'secondary'
     else:
         style = {'flex': '1 1 25%', 'overflow': 'auto'}
-        icon = html.I(className='fas fa-expand')
+        icon = html.I(className='fas fa-expand', style={'fontSize': '0.2px'})
         color = 'outline-secondary'
     return style, new_state, icon, color
 
@@ -127,7 +127,7 @@ def toggle_rank_delta_fullscreen(n_clicks, is_fullscreen):
         color = 'secondary'
     else:
         style = {'flex': '1 1 25%', 'overflow': 'auto'}
-        icon = html.I(className='fas fa-expand')
+        icon = html.I(className='fas fa-expand', style={'fontSize': '0.2px'})
         color = 'outline-secondary'
     return style, new_state, icon, color
 
@@ -154,7 +154,7 @@ def toggle_saliency_fullscreen(n_clicks, is_fullscreen):
         color = 'secondary'
     else:
         style = {'flex': '1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}
-        icon = html.I(className='fas fa-expand')
+        icon = html.I(className='fas fa-expand', style={'fontSize': '0.2px'})
         color = 'outline-secondary'
     return style, new_state, icon, color
 
@@ -182,7 +182,7 @@ def toggle_token_attr_fullscreen(n_clicks, is_fullscreen):
     else:
         # Restore original Token Attribution card styling exactly as defined in main.py
         style = {'flex': '1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'minHeight': '280px'}
-        icon = html.I(className='fas fa-expand')
+        icon = html.I(className='fas fa-expand', style={'fontSize': '0.2px'})
         color = 'outline-secondary'
     return style, new_state, icon, color
 
@@ -209,6 +209,6 @@ def toggle_cir_controls_fullscreen(n_clicks, is_fullscreen):
         color = 'secondary'
     else:
         style = {'flex': '1 1 25%', 'overflow': 'auto'}
-        icon = html.I(className='fas fa-expand')
+        icon = html.I(className='fas fa-expand', style={'fontSize': '0.2px'})
         color = 'outline-secondary'
     return style, new_state, icon, color 
