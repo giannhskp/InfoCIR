@@ -376,9 +376,9 @@ def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_sal
     if not dir_to_use:
         raise PreventUpdate
 
-    # When directory changes, reset current index to 0 via preprocessing chain
-    return {'save_directory': dir_to_use} 
-
+    new_data = dict(current_saliency)
+    new_data['save_directory'] = dir_to_use
+    return new_data
 
 # ------------------------------------------------------------
 # Token Attribution display callback
