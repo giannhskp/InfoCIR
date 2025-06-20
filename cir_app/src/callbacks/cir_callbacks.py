@@ -86,6 +86,7 @@ def update_search_button_state(text_prompt, upload_contents):
 )
 def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
+    top_n = int(top_n)
     if not upload_contents or not text_prompt:
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
         # Show Run CIR button, hide visualize button, clear enhance results and data, reset viz mode
@@ -599,7 +600,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
     # Status message with icon
     status_messages = [
         html.I(className="fas fa-magic text-success me-2"),
-        "Enhanced prompt generated successfully! See analysis below."
+        "Enhanced prompt generated successfully! See analysis on the right column."
     ]
     
     # Add saliency status if available
@@ -1167,7 +1168,10 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
             xfq, yfq = None, None  # Final query only shown for UMAP
         os.unlink(tmp.name)
     # Reset CIR traces
-    scatterplot_fig['data'] = scatterplot_fig['data'][:3]
+    scatterplot_fig['data'] = [
+        trace for trace in scatterplot_fig['data']
+        if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
+    ]
     scatterplot_fig['layout']['images'] = []
     main = scatterplot_fig['data'][0]
     xs, ys, cds = main['x'], main['y'], main['customdata']
@@ -1188,10 +1192,16 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
         elif v in cmpk:
             xk.append(xi); yk.append(yi)
     # Plot Query and Final Query
+    if xk:
+        trace_k = go.Scatter(x=xk, y=yk, mode='markers', marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
+        scatterplot_fig['data'].append(trace_k.to_plotly_json())
     if xq is not None:
         scatterplot_fig['data'].append(go.Scatter(x=[xq],y=[yq],mode='markers',marker=dict(color=config.QUERY_COLOR,size=12,symbol='star'),name='Query').to_plotly_json())
     if xfq is not None:
         scatterplot_fig['data'].append(go.Scatter(x=[xfq],y=[yfq],mode='markers',marker=dict(color=config.FINAL_QUERY_COLOR,size=10,symbol='diamond'),name='Final Query').to_plotly_json())
+    if x1:
+        trace_1 = go.Scatter(x=x1, y=y1, mode='markers', marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
+        scatterplot_fig['data'].append(trace_1.to_plotly_json())
     # Wordcloud
     counts = df.loc[topk_ids]['class_name'].value_counts()
     if len(counts):

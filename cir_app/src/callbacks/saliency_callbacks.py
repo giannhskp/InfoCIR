@@ -376,9 +376,9 @@ def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_sal
     if not dir_to_use:
         raise PreventUpdate
 
-    # When directory changes, reset current index to 0 via preprocessing chain
-    return {'save_directory': dir_to_use} 
-
+    new_data = dict(current_saliency)
+    new_data['save_directory'] = dir_to_use
+    return new_data
 
 # ------------------------------------------------------------
 # Token Attribution display callback
@@ -521,8 +521,8 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
         title_font_size = 16
         axis_font_size = 12
     else:
-        chart_height = 180
-        chart_margin = dict(l=20, r=20, t=25, b=70)
+        chart_height = 130
+        chart_margin = dict(l=20, r=20, t=25, b=50)
         title_font_size = 11
         axis_font_size = 9
     
@@ -552,7 +552,7 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
     prev_dis = current_index <= 0
     next_dis = current_index >= len(candidate_attributions) - 1
 
-    return (graph, {'display': 'block', 'padding': '0.25rem'}, nav_info, prev_dis, next_dis)
+    return (graph, {'display': 'block', 'padding': '0.25rem', 'height': '45px', 'flexShrink': '0'}, nav_info, prev_dis, next_dis)
 
 
 # ------------------------------------------------------------
