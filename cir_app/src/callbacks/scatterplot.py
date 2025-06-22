@@ -43,20 +43,30 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, cir_toggle_state, 
 
     # Handle CIR toggle state changes
     if trigger.startswith('cir-toggle-state'):
-        if not cir_toggle_state or not search_data:
+        # --------------------------------------------------------------
+        # 1) *Hide*  — user disabled visualisation (cir_toggle_state=False)
+        # --------------------------------------------------------------
+        if not cir_toggle_state:
             # Hide action: reset everything
             gallery_children = []
             wordcloud_data = []
             from src.widgets import histogram
             histogram_fig = histogram.draw_histogram(None)
             scatterplot_fig['layout']['images'] = []
-            scatterplot_fig['data'][0]['marker'] = {'color': config.SCATTERPLOT_COLOR}
+            # Preserve existing marker attributes (e.g., size) while just
+            # resetting the colour back to the default one.
+            marker_dict = dict(scatterplot_fig['data'][0].get('marker', {}))
+            marker_dict['color'] = config.SCATTERPLOT_COLOR
+            scatterplot_fig['data'][0]['marker'] = marker_dict
             scatterplot_fig['data'] = [
                 trace for trace in scatterplot_fig['data']
                 if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
             ]
             return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None, []
-        else:
+        # --------------------------------------------------------------
+        # 2) *Visualize* — cir_toggle_state=True **and** we have search_data
+        # --------------------------------------------------------------
+        elif search_data:
             # Visualize action
             from src.widgets import gallery, wordcloud, histogram
             df = Dataset.get()
@@ -119,6 +129,13 @@ def update_scatter_and_widgets(scatterplot_fig, selectedData, cir_toggle_state, 
             )
             histogram_fig = histogram.draw_histogram(cir_data)
             return gallery_children, wordcloud_data, histogram_fig, scatterplot_fig, None, selected_gallery_image_ids
+
+        # --------------------------------------------------------------
+        # 3) cir_toggle_state=True **but** search_data not yet populated
+        #    → wait until we receive it instead of wiping the traces.
+        # --------------------------------------------------------------
+        else:
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
 
     # Drag selection action
     if trigger.startswith('scatterplot'):
