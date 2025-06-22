@@ -1008,26 +1008,26 @@ class SaliencyManager:
             
             print(f"✅ {len(candidates_items)} candidate saliency visualizations saved")
         
-        # Save text attribution visualizations
-        if 'text_attribution' in query_results:
-            print("💾 Saving text attribution visualizations...")
+        # # Save text attribution visualizations
+        # if 'text_attribution' in query_results:
+        #     print("💾 Saving text attribution visualizations...")
             
-            # Save reference text attribution
-            if 'reference' in query_results['text_attribution']:
-                ref_attr_path = save_path / "reference_text_attribution.png"
-                self.create_text_attribution_visualization(
-                    query_results['text_attribution']['reference'], 
-                    str(ref_attr_path)
-                )
+        #     # Save reference text attribution
+        #     if 'reference' in query_results['text_attribution']:
+        #         ref_attr_path = save_path / "reference_text_attribution.png"
+        #         self.create_text_attribution_visualization(
+        #             query_results['text_attribution']['reference'], 
+        #             str(ref_attr_path)
+        #         )
             
-            # Save candidate text attributions
-            if 'candidates' in query_results['text_attribution']:
-                for image_name, text_attr in query_results['text_attribution']['candidates'].items():
-                    safe_name = Path(image_name).stem.replace('/', '_')
-                    attr_path = save_path / f"text_attribution_{safe_name}.png"
-                    self.create_text_attribution_visualization(text_attr, str(attr_path))
+        #     # Save candidate text attributions
+        #     if 'candidates' in query_results['text_attribution']:
+        #         for image_name, text_attr in query_results['text_attribution']['candidates'].items():
+        #             safe_name = Path(image_name).stem.replace('/', '_')
+        #             attr_path = save_path / f"text_attribution_{safe_name}.png"
+        #             self.create_text_attribution_visualization(text_attr, str(attr_path))
                 
-                print(f"✅ {len(query_results['text_attribution']['candidates'])} text attribution visualizations saved")
+        #         print(f"✅ {len(query_results['text_attribution']['candidates'])} text attribution visualizations saved")
     
     def __del__(self):
         """Clean up hooks when the object is destroyed."""

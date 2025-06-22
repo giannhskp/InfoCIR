@@ -358,4 +358,13 @@ def get_data_selected_on_scatterplot(scatterplot_fig):
     else:
         data_selected = Dataset.get()
 
+    # --------------------------------------------------------------
+    # Skip adding thumbnail overlays when CIR visualisation markers
+    # are present.  Otherwise the images cover the coloured Top-K /
+    # Top-1 / Query markers a moment after they are drawn.
+    # --------------------------------------------------------------
+    if any(tr.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query']
+           for tr in scatterplot_fig.get('data', [])):
+        return scatterplot_fig
+
     return data_selected 
