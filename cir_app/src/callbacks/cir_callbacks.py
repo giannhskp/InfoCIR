@@ -82,7 +82,6 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
      Output('viz-mode', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('cir-selected-image-ids', 'data', allow_duplicate=True),
      Output('saliency-data', 'data'),
      Output('wordcloud', 'list', allow_duplicate=True),
      Output('histogram', 'figure', allow_duplicate=True)],
@@ -115,7 +114,6 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             None,                  # cir-enhanced-prompts-data
             False,                 # viz-mode
             [],                    # viz-selected-ids
-            [],                    # cir-selected-image-ids
             None,                  # saliency-data
             [],                    # wordcloud
             histogram.draw_histogram(None)  # histogram figure
@@ -472,7 +470,6 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             None,                      # cir-enhanced-prompts-data
             False,                     # viz-mode – OFF by default
             [],                        # viz-selected-ids
-            [],                        # cir-selected-image-ids
             saliency_summary,          # saliency-data
             wc,                        # wordcloud
             hist                       # histogram figure
@@ -497,7 +494,6 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             None,                        # cir-enhanced-prompts-data
             False,                       # viz-mode
             [],                          # viz-selected-ids
-            [],                          # cir-selected-image-ids
             None,                        # saliency-data
             [],                          # wordcloud
             histogram.draw_histogram(None)  # histogram figure
@@ -532,14 +528,18 @@ def toggle_cir_visualization(n_clicks, current_state):
 @callback(
     [Output('enhance-prompt-button', 'disabled'),
      Output('enhance-prompt-button', 'color')],
-    Input({'type': 'cir-result-card', 'index': ALL}, 'className')
+    [Input({'type': 'cir-result-card', 'index': ALL}, 'className'),
+     Input('cir-selected-image-ids', 'data')]
 )
-def update_enhance_button_state(wrapper_classnames):
+def update_enhance_button_state(wrapper_classnames, selected_ids):
     """
     Enable the Enhance prompt button when a result is selected; otherwise keep it disabled.
     """
-    # If any wrapper has the 'selected' class, enable button
-    if any('selected' in cn for cn in wrapper_classnames):
+    # Check both className and selected_ids to handle clearing from mode toggle
+    has_selected_class = any('selected' in cn for cn in wrapper_classnames)
+    has_selected_ids = selected_ids and len(selected_ids) > 0
+    
+    if has_selected_class or has_selected_ids:
         return False, 'primary'
     return True, 'secondary'
 
@@ -1781,32 +1781,50 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
     [Output('viz-mode', 'data'),
      Output('visualize-toggle-button', 'children'),
      Output('visualize-toggle-button', 'color'),
-     Output('cir-results', 'children', allow_duplicate=True)],
+     Output('cir-results', 'children', allow_duplicate=True),
+     Output('cir-selected-image-ids', 'data', allow_duplicate=True),
+     Output('viz-selected-ids', 'data', allow_duplicate=True),
+     Output('scatterplot', 'figure', allow_duplicate=True)],
     Input('visualize-toggle-button', 'n_clicks'),
     [State('viz-mode', 'data'),
      State('prompt-selection', 'value'),
      State('cir-enhanced-prompts-data', 'data'),
-     State('cir-search-data', 'data')],
+     State('cir-search-data', 'data'),
+     State('scatterplot', 'figure')],
     prevent_initial_call=True
 )
-def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, search_data):
-    """Toggle visualization mode ON/OFF."""
+def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, search_data, scatterplot_fig):
+    """Toggle visualization mode ON/OFF and clear all selections when switching modes."""
     # Only toggle if we actually have a click (n_clicks > 0)
     if n_clicks is None or n_clicks == 0:
         # Initial state - keep current mode and set appropriate label
         label = 'Visualize ON' if current_mode else 'Visualize OFF'
         color = 'success' if current_mode else 'secondary'
         from dash import no_update
-        return current_mode, label, color, no_update
+        return current_mode, label, color, no_update, no_update, no_update, no_update
     
     # Toggle the mode
     new_mode = not current_mode
     label = 'Visualize ON' if new_mode else 'Visualize OFF'
     color = 'success' if new_mode else 'secondary'
 
+    # Clear all selections when switching modes
+    cleared_cir_selected = []
+    cleared_viz_selected = []
+
+    # Clear visualization traces from scatterplot when switching modes
+    import copy
+    if scatterplot_fig is not None:
+        updated_fig = copy.deepcopy(scatterplot_fig)
+        # Remove Selected Images trace when switching modes
+        updated_fig['data'] = [tr for tr in updated_fig['data'] if tr.get('name') != 'Selected Images']
+    else:
+        from dash import no_update
+        updated_fig = no_update
+
     # Rebuild Query Results layout with new viz_mode state
     if search_data is None:
-        return new_mode, label, color, no_update
+        return new_mode, label, color, no_update, cleared_cir_selected, cleared_viz_selected, updated_fig
 
     # Determine which results to show (baseline or selected enhanced prompt)
     if selected_idx is not None and selected_idx >= 0 and enhanced_data is not None:
@@ -1824,7 +1842,7 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
         else:
             layout = no_update
 
-    return new_mode, label, color, layout
+    return new_mode, label, color, layout, cleared_cir_selected, cleared_viz_selected, updated_fig
 
 # -----------------------------------------------------------------------------
 # React to viz-mode changes – clear selections & update scatterplot when turning
