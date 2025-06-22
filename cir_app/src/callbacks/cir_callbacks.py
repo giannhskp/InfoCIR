@@ -228,11 +228,15 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                         'height': '100%'
                     }
                 )
+                # Automatically pre-select the TOP-2 image (idx == 1) for PROMPT-ENHANCEMENT
+                # mode ONLY (viz_mode == False). When visualization mode is ON we do NOT
+                # want any card to start in the green "selected" state.
+                preselected = (not viz_mode) and (card_index == 1)
                 card = html.Div(
                     inner_card,
                     id={'type': 'cir-result-card', 'index': img_name},
                     n_clicks=0,
-                    className='result-card-wrapper',
+                    className=f"result-card-wrapper{' selected' if preselected else ''}",
                     style={'height': '100%'}
                 )
             if card_index == 0:
@@ -1663,20 +1667,27 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
                 ], className="result-card-wrapper position-relative", style={"cursor": "default", "height": "100%"})
         else:
             inner = dbc.Card(card_body, className="result-card", style={"border": "1px solid #dee2e6", "borderRadius": "6px", "height": "100%"})
+            # Automatically pre-select the TOP-2 image (idx == 1) by applying the
+            # "selected" CSS class to its wrapper so that the green highlight is
+            # visible immediately after the CIR results are displayed.
+            preselected = (not viz_mode) and (idx == 1)
             if clickable:
                 # Include ID & n_clicks so that selection callbacks work
                 wrapper = html.Div(
                     inner,
                     id={"type": "cir-result-card", "index": str(img_name)},
                     n_clicks=0,
-                    className="result-card-wrapper",
+                    className=f"result-card-wrapper{' selected' if preselected else ''}",
                     style={"height": "100%"},
                 )
             else:
-                # Non-interactive wrapper (no ID) for enhanced-prompt results
+                # Non-interactive wrapper (no ID) for enhanced-prompt results.
+                # Still apply preselection highlight for the TOP-2 image so that
+                # the green border is visible even when the cards are rendered
+                # in a non-clickable context (e.g., enhanced-prompt results).
                 wrapper = html.Div(
                     inner,
-                    className="result-card-wrapper",
+                    className=f"result-card-wrapper{' selected' if preselected else ''}",
                     style={"height": "100%"},
                 )
 
