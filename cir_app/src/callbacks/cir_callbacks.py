@@ -1513,8 +1513,9 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     main = scatterplot_fig['data'][0]
     xs, ys, cds = main['x'], main['y'], main['customdata']
     
-    # Reset main trace colors to remove any previous highlighting from selected images/classes
-    main['marker'] = {'color': config.SCATTERPLOT_COLOR}
+    # Reset main trace colours without touching other marker attrs (size, opacity…)
+    from src.widgets.scatterplot import _set_marker_colors as _set_marker_colors_helper
+    _set_marker_colors_helper(main, config.SCATTERPLOT_COLOR)
     # Plot Top-K and Top-1
     x1, y1, xk, yk = [], [], [], []
     cmp1 = int(top1_id) if top1_id is not None else None

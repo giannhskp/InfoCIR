@@ -147,7 +147,8 @@ def _handle_regular_multi_selection(scatterplot_fig, selected_image_ids, selecte
             return config.SCATTERPLOT_COLOR  # Default for others
     
     colors = df.apply(get_color, axis=1)
-    scatterplot_fig['data'][0]['marker'] = {'color': colors}
+    from src.widgets.scatterplot import _set_marker_colors as _set_marker_colors_helper
+    _set_marker_colors_helper(scatterplot_fig['data'][0], colors)
 
 
 def _handle_cir_multi_selection(scatterplot_fig, selected_image_ids, selected_class_names, selected_image_data):
@@ -213,7 +214,8 @@ def _handle_cir_multi_selection(scatterplot_fig, selected_image_ids, selected_cl
             return config.SCATTERPLOT_COLOR  # Default for others
     
     colors = df.apply(get_color, axis=1)
-    scatterplot_fig['data'][0]['marker'] = {'color': colors}
+    from src.widgets.scatterplot import _set_marker_colors as _set_marker_colors_helper
+    _set_marker_colors_helper(scatterplot_fig['data'][0], colors)
 
 
 def _deselect_all_images(scatterplot_fig, selected_image_data):
@@ -321,8 +323,9 @@ def _reset_main_trace_colors(scatterplot_fig):
     from src import config
     main_trace = scatterplot_fig['data'][0]  # Main dataset trace
     
-    # Reset to default color for all points
-    main_trace['marker'] = {'color': config.SCATTERPLOT_COLOR}
+    # Reset to default colour while keeping marker size etc.
+    from src.widgets.scatterplot import _set_marker_colors as _set_marker_colors_helper
+    _set_marker_colors_helper(main_trace, config.SCATTERPLOT_COLOR)
 
 
 def _update_legend_for_deselection(scatterplot_fig):
