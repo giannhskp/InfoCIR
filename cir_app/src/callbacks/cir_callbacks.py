@@ -23,6 +23,7 @@ from src.widgets import gallery, wordcloud, histogram, scatterplot
 from src.callbacks.saliency_callbacks import load_and_resize_image  # Reuse efficient thumbnail loader
 from dash import no_update
 import copy
+import math
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -71,25 +72,51 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-search-status', 'children'),
      Output('cir-search-data', 'data'),
      Output('cir-toggle-button', 'style', allow_duplicate=True),
+     Output('cir-toggle-button', 'disabled', allow_duplicate=True),
+     Output('cir-toggle-button', 'children', allow_duplicate=True),
+     Output('cir-toggle-button', 'color', allow_duplicate=True),
+     Output('cir-toggle-state', 'data', allow_duplicate=True),
      Output('cir-run-button', 'style'),
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
      Output('viz-mode', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('saliency-data', 'data')],
+     Output('saliency-data', 'data'),
+     Output('wordcloud', 'list', allow_duplicate=True),
+     Output('histogram', 'figure', allow_duplicate=True)],
     [Input('cir-search-button', 'n_clicks')],
     [State('cir-upload-image', 'contents'),
      State('cir-text-prompt', 'value'),
      State('cir-top-n', 'value'),
-     State('custom-dropdown', 'value')],
+     State('custom-dropdown', 'value'),
+     State('cir-toggle-state', 'data')],
     prevent_initial_call=True
 )
-def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model):
+def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model, current_toggle_state):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
+    top_n = int(top_n)
     if not upload_contents or not text_prompt:
+        from src.widgets import histogram
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
-        # Show Run CIR button, hide visualize button, clear enhance results and data, reset viz mode
-        return empty, html.Div(), None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None
+        # No search yet → keep Visualize button disabled, ensure Run-CIR hidden.
+        return (
+            empty,                 # cir-results
+            html.Div(),            # cir-search-status
+            None,                  # cir-search-data
+            no_update,             # cir-toggle-button style (unchanged)
+            True,                  # cir-toggle-button disabled
+            'Visualize CIR results',  # cir-toggle-button text
+            'success',             # cir-toggle-button color
+            False,                 # cir-toggle-state OFF
+            {'display': 'none'},   # cir-run-button style
+            [],                    # cir-enhance-results
+            None,                  # cir-enhanced-prompts-data
+            False,                 # viz-mode
+            [],                    # viz-selected-ids
+            None,                  # saliency-data
+            [],                    # wordcloud
+            histogram.draw_histogram(None)  # histogram figure
+        )
     try:
         print(f"Starting CIR search with model: {selected_model}, prompt: '{text_prompt}', top_n: {top_n}")
         
@@ -333,16 +360,69 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'original_results': [[str(name), float(score)] for (name, score) in results],
         }
         
+        # Calculate histogram and wordcloud based on current visualization state
+        from src.widgets import wordcloud, histogram
+        if current_toggle_state:  # If visualization is currently enabled
+            # Populate histogram and wordcloud with CIR results
+            counts = df.loc[topk_ids]['class_name'].value_counts()
+            if len(counts):
+                wg = wordcloud.wordcloud_weight_rescale(counts.values, 1, counts.max())
+                wc = sorted([[cn, w] for cn, w in zip(counts.index, wg)], key=lambda x: x[1], reverse=True)
+            else:
+                wc = []
+            
+            # Create histogram for CIR results
+            cir_df = df.loc[topk_ids]
+            hist = histogram.draw_histogram(cir_df)
+        else:
+            # Visualization is OFF - return empty widgets
+            wc = []  # Empty wordcloud when visualization is OFF
+            hist = histogram.draw_histogram(None)  # Empty histogram when visualization is OFF
+        
         print("CIR search callback completed successfully")
-        # Show visualize button, hide Run CIR, clear enhance data, reset viz mode to OFF
-        return results_div, status, store_data, {'display': 'block', 'color': 'black'}, {'display': 'none', 'color': 'black'}, [], None, False, [], saliency_summary
+        # Auto-enable Visualize button (set ON) and keep Run-CIR hidden, reset viz-related stores
+        return (
+            results_div,               # cir-results
+            status,                    # cir-search-status
+            store_data,                # cir-search-data
+            no_update,                 # cir-toggle-button style (unchanged)
+            False,                     # cir-toggle-button disabled – enabled for interaction
+            'Hide CIR results',        # cir-toggle-button text (now ON)
+            'warning',                 # cir-toggle-button color
+            True,                      # cir-toggle-state – ON
+            {"display": "none"},     # cir-run-button style – remain hidden
+            [],                        # cir-enhance-results
+            None,                      # cir-enhanced-prompts-data
+            False,                     # viz-mode – OFF by default
+            [],                        # viz-selected-ids
+            saliency_summary,          # saliency-data
+            wc,                        # wordcloud
+            hist                       # histogram figure
+        )
     except Exception as e:
         print(f"CIR search error: {e}")
         import traceback
         traceback.print_exc()
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
-        # On error, hide visualize button, show Run CIR, clear enhance results and data, reset viz mode
-        return html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"), err, None, {'display': 'none', 'color': 'black'}, {'display': 'block', 'color': 'black'}, [], None, False, [], None
+        # On error, keep Visualize button disabled and Run-CIR hidden
+        return (
+            html.Div("Error occurred during image retrieval.", className="text-danger text-center p-4"),  # cir-results
+            err,                         # cir-search-status
+            None,                        # cir-search-data
+            no_update,                   # cir-toggle-button style
+            True,                        # cir-toggle-button disabled
+            'Visualize CIR results',     # button text
+            'success',                   # button color
+            False,                       # cir-toggle-state OFF
+            {"display": "none"},        # cir-run-button style – hidden
+            [],                          # cir-enhance-results
+            None,                        # cir-enhanced-prompts-data
+            False,                       # viz-mode
+            [],                          # viz-selected-ids
+            None,                        # saliency-data
+            [],                          # wordcloud
+            histogram.draw_histogram(None)  # histogram figure
+        )
 
 # Button toggle callback for CIR visualization
 @callback(
@@ -386,16 +466,17 @@ def update_enhance_button_state(wrapper_classnames):
 
 @callback(
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className'),
-     Output('cir-selected-image-id', 'data')],
+     Output('cir-selected-image-ids', 'data')],
     Input({'type': 'cir-result-card', 'index': ALL}, 'n_clicks'),
     [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
-     State('viz-mode', 'data')],
+     State('viz-mode', 'data'),
+     State('cir-selected-image-ids', 'data')],
     prevent_initial_call=True
 )
-def toggle_cir_result_selection(n_clicks_list, current_classnames, viz_mode):
+def toggle_cir_result_selection(n_clicks_list, current_classnames, viz_mode, selected_ids):
     """
-    Toggle selection highlight for CIR result cards, allowing only one selected at a time.
-    Clicking the same card again will deselect it.
+    Toggle selection highlight for CIR result cards, allowing MULTIPLE selections.
+    Clicking a selected card again will deselect it.
     """
     # If visualization mode is ON, ignore prompt-enhancement selection logic
     if viz_mode:
@@ -404,41 +485,41 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames, viz_mode):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    # Get index of clicked card
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    # Parse which card was clicked
+    triggered_id_raw = ctx.triggered[0]['prop_id'].split('.')[0]
     try:
-        selected_dict = json.loads(triggered_id)
-        selected_index = selected_dict.get('index')
+        trig_dict = json.loads(triggered_id_raw)
+        clicked_idx = str(trig_dict.get('index'))
     except Exception:
-        selected_index = None
-    
-    # Check if the clicked card is already selected
-    clicked_card_currently_selected = False
-    for i, input_dict in enumerate(ctx.inputs_list[0]):
-        if input_dict['id'].get('index') == selected_index:
-            if 'selected' in current_classnames[i]:
-                clicked_card_currently_selected = True
-            break
-    
-    # Build className list in order of inputs
-    class_names = []
-    for input in ctx.inputs_list[0]:
-        idx = input['id'].get('index')
-        if idx == selected_index:
-            # If already selected, deselect it; otherwise select it
-            if clicked_card_currently_selected:
-                class_names.append('result-card-wrapper')  # Deselect
-            else:
-                class_names.append('result-card-wrapper selected')  # Select
-        else:
-            class_names.append('result-card-wrapper')  # Deselect all others
-    
-    # Determine selected image id or deselect
-    if clicked_card_currently_selected:
-        selected_image_id = None
+        raise PreventUpdate
+
+    # Ensure list initialised
+    selected_ids = selected_ids or []
+
+    # Toggle membership
+    if clicked_idx in selected_ids:
+        selected_ids.remove(clicked_idx)
+        was_selected = True
     else:
-        selected_image_id = selected_index
-    return class_names, selected_image_id
+        selected_ids.append(clicked_idx)
+        was_selected = False
+
+    # ------------------------------------------------------------------
+    # Build updated class names list (add/remove 'selected')
+    # ------------------------------------------------------------------
+    new_classnames = []
+    sel_set = set(selected_ids)
+    for input_dict, cls in zip(ctx.inputs_list[0], current_classnames):
+        idx = str(input_dict['id']['index'])
+        parts = cls.split()
+        if idx in sel_set and 'selected' not in parts:
+            parts.append('selected')
+        if idx not in sel_set and 'selected' in parts:
+            parts.remove('selected')
+        new_classnames.append(' '.join(parts))
+
+    return new_classnames, selected_ids
 
 # New callback to enhance the user prompt and evaluate against the selected image
 @callback(
@@ -446,17 +527,17 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames, viz_mode):
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data')],
     Input('enhance-prompt-button', 'n_clicks'),
-    [State('cir-search-data', 'data'), State('cir-selected-image-id', 'data'), State('saliency-data', 'data')],
+    [State('cir-search-data', 'data'), State('cir-selected-image-ids', 'data'), State('saliency-data', 'data')],
     prevent_initial_call=True
 )
-def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
+def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     """
     Enhance the user's prompt via a small LLM, compare each to the selected image, choose the best,
     rerun CIR with that prompt, and display diagnostics.
     """
     import os
     # Guard against missing data
-    if not search_data or selected_image_id is None:
+    if not search_data or not selected_image_ids:
         raise PreventUpdate
 
     # Reconstruct query image file
@@ -546,9 +627,46 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
     prompts = list(set(prompts))
     print(f"Final prompts list: {prompts}")
 
+    # ----------------------------------------
+    # Helper metric functions (IR measures)
+    # ----------------------------------------
+    top_k = search_data['top_n']  # evaluation depth
+
+    def calculate_ndcg(ranks):
+        """Binary nDCG@k given 1-based ranks of the |selected_image_ids| relevant items
+        (using the cut-off k = top_k)."""
+        dcg = 0.0
+        for r in ranks:
+            if r <= top_k:
+                dcg += 1.0 / math.log2(r + 1)
+        m = len(selected_image_ids)
+        ideal_dcg = sum(1.0 / math.log2(i + 1 + 1) for i in range(min(m, top_k)))
+        return dcg / ideal_dcg if ideal_dcg > 0 else 0.0
+
+    def calculate_average_precision(ranks):
+        """Average-Precision@k (MAP for single query) – binary relevance."""
+        num_rel_seen = 0
+        precisions = []
+        for r in sorted(ranks):
+            if r > top_k:
+                continue
+            num_rel_seen += 1
+            precisions.append(num_rel_seen / r)
+        m = min(len(selected_image_ids), top_k)
+        return sum(precisions) / m if m > 0 else 0.0
+
+    def calculate_mrr(ranks):
+        """Reciprocal rank of the first relevant result (0 if none in top-k)."""
+        rr = min([r for r in ranks if r <= top_k], default=None)
+        return 1.0 / rr if rr is not None else 0.0
+
     # Score each candidate prompt and store full results
-    sims = []
-    ranks = []  # List to store the rank (position) of the selected image
+    coverages = []       # Fraction of ideal images retrieved within top-k (0–1)
+    mean_ranks = []      # Average rank of the selected ideal images (lower is better)
+    mean_sims = []       # Mean similarity of the selected ideal images (for additional insight)
+    ndcgs      = []      # Normalised Discounted Cumulative Gain@k (0–1)
+    aps        = []      # Average-Precision@k  (0–1)
+    mrrs       = []      # Mean Reciprocal Rank (0–1)
     all_prompt_results = []
     
     # Use saliency-enabled enhanced prompt processing
@@ -562,33 +680,61 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
         temp_image_path=tmp.name,
         enhanced_prompts=prompts,
         top_n=search_data['top_n'],
-        selected_image_id=selected_image_id,
+        selected_image_ids=selected_image_ids,
         base_save_dir=base_saliency_dir
     )
     
-    # Process results for scoring
-    for i, (p, full_prompt_results) in enumerate(zip(prompts, all_prompt_results)):
-        # Find the similarity score for the ideal image in these results
-        ideal_score = None
-        position = None
+    # Process results for scoring (multiple ideal images)
+    for i, full_prompt_results in enumerate(all_prompt_results):
+        # Build lookup for quick rank & sim
+        name_to_rank = {}
+        name_to_sim = {}
         for idx, (name, score) in enumerate(full_prompt_results):
-            if str(name) == str(selected_image_id):
-                ideal_score = score
-                position = idx + 1
-                break
-        if ideal_score is None:
-            ideal_score = 0.0
-        if position is None:
-            position = len(full_prompt_results) + 1  # beyond top-N
-        sims.append(ideal_score)
-        ranks.append(position)
+            name_to_rank[str(name)] = idx + 1  # 1-based
+            name_to_sim[str(name)] = score
 
-    # Select best prompt by lowest rank (best position)
-    best_idx = min(range(len(prompts)), key=lambda i: ranks[i])
+        ranks_for_prompt = []
+        sims_for_prompt = []
+        for iid in selected_image_ids:
+            if iid in name_to_rank:
+                ranks_for_prompt.append(name_to_rank[iid])
+                sims_for_prompt.append(name_to_sim[iid])
+            else:
+                # Not retrieved within top-k
+                ranks_for_prompt.append(len(full_prompt_results) + 1)
+                sims_for_prompt.append(0.0)
+
+        retrieved_cnt = sum(r <= len(full_prompt_results) for r in ranks_for_prompt)
+        coverage = retrieved_cnt / len(selected_image_ids)
+        mean_rank = sum(ranks_for_prompt) / len(ranks_for_prompt)
+        mean_sim = sum(sims_for_prompt) / len(sims_for_prompt)
+        ndcg = calculate_ndcg(ranks_for_prompt)
+        ap = calculate_average_precision(ranks_for_prompt)
+        mrr = calculate_mrr(ranks_for_prompt)
+
+        coverages.append(coverage)
+        mean_ranks.append(mean_rank)
+        mean_sims.append(mean_sim)
+        ndcgs.append(ndcg)
+        aps.append(ap)
+        mrrs.append(mrr)
+
+    # Select best prompt – optimise across metrics: nDCG ➜ AP ➜ Coverage ➜ Mean-rank
+    best_idx = min(
+        range(len(prompts)),
+        key=lambda i: (
+            -ndcgs[i],   # higher better
+            -aps[i],
+            -coverages[i],
+            mean_ranks[i]
+        )
+    )
     best_prompt = prompts[best_idx]
-    best_sim_score = sims[best_idx]
-    best_position = ranks[best_idx]
-    print(f"Selected best prompt: '{best_prompt}' with score: {best_sim_score}")
+    best_coverage = coverages[best_idx]
+    best_mean_rank = mean_ranks[best_idx]
+    best_ndcg = ndcgs[best_idx]
+    best_ap = aps[best_idx]
+    print(f"Selected best prompt: '{best_prompt}'  nDCG:{best_ndcg:.3f}  AP:{best_ap:.3f}  Coverage:{best_coverage:.2f}")
 
     # Get results for best prompt (already computed)
     full_results = all_prompt_results[best_idx]
@@ -599,7 +745,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
     # Status message with icon
     status_messages = [
         html.I(className="fas fa-magic text-success me-2"),
-        "Enhanced prompt generated successfully! See analysis below."
+        "Enhanced prompt generated successfully! See analysis on the right column."
     ]
     
     # Add saliency status if available
@@ -613,7 +759,11 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
 
     # Create enhanced table rows with highlighting for best prompt and action buttons
     table_rows = []
-    for i, (p, s) in enumerate(zip(prompts, sims)):
+    for i in range(len(prompts)):
+        p = prompts[i]
+        cov = coverages[i]
+        ndcg_val = ndcgs[i]
+        ap_val = aps[i]
         view_button = dbc.Button(
             [html.I(className="fas fa-eye me-1"), "View"],
             id={'type': 'enhanced-prompt-view', 'index': i},
@@ -625,25 +775,28 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
         if i == best_idx:  # Highlight best prompt
             row = html.Tr([
                 html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
-                html.Td([html.Span(str(ranks[i]), className="badge bg-success")]),
-                html.Td([html.Span(f"{s:.4f}", className="badge bg-success")]),
+                html.Td([html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-success")]),
+                html.Td([html.Span(f"{ap_val*100:.0f}%", className="badge bg-success")]),
+                html.Td([html.Span(f"{int(cov*100)}%", className="badge bg-success")]),
                 html.Td(view_button)
             ], className="table-success")
         else:
             row = html.Tr([
                 html.Td(p),
-                html.Td(html.Span(str(ranks[i]), className="badge bg-secondary")),
-                html.Td(html.Span(f"{s:.4f}", className="badge bg-secondary")),
+                html.Td(html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-secondary")),
+                html.Td(html.Span(f"{ap_val*100:.0f}%", className="badge bg-secondary")),
+                html.Td(html.Span(f"{int(cov*100)}%", className="badge bg-secondary")),
                 html.Td(view_button)
             ])
         table_rows.append(row)
 
-    # Enhanced candidates table with better styling and action column
+    # Enhanced candidates table with better styling and action column – columns: Coverage, Mean Rank
     candidates_table = dbc.Table([
         html.Thead(html.Tr([
             html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
-            html.Th([html.I(className="fas fa-hashtag me-2"), "Position"], className="bg-light"),
-            html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light"),
+            html.Th([html.I(className="fas fa-chart-line me-2"), "nDCG"], className="bg-light"),
+            html.Th([html.I(className="fas fa-percentage me-2"), "AP"], className="bg-light"),
+            html.Th([html.I(className="fas fa-bullseye me-2"), "Coverage"], className="bg-light"),
             html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
         ]), className="thead-light"),
         html.Tbody(table_rows)
@@ -697,7 +850,7 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
         dbc.Alert([
             html.H6([html.I(className="fas fa-trophy text-warning me-2"), "Selected Best Prompt"], className="alert-heading mb-2"),
             html.P(f'"{best_prompt}"', className="mb-1 font-monospace"),
-            html.Small(f"Position: {best_position} | Similarity Score: {best_sim_score:.4f}", className="text-muted")
+            html.Small(f"nDCG: {best_ndcg*100:.0f}% | AP: {best_ap*100:.0f}% | Coverage: {best_coverage*100:.0f}%", className="text-muted")
         ], color="light", className="border-start border-warning border-4"),
         
         # Results section
@@ -723,8 +876,12 @@ def enhance_prompt(n_clicks, search_data, selected_image_id, saliency_summary):
 
     enhanced_prompts_data = {
         'prompts': prompts,
-        'similarities': sims,
-        'positions': ranks,
+        'coverages': coverages,
+        'mean_ranks': mean_ranks,
+        'mean_sims': mean_sims,
+        'ndcgs': ndcgs,
+        'aps': aps,
+        'mrrs': mrrs,
         'all_results': all_prompt_results,
         'best_idx': best_idx,
         'currently_viewing': best_idx,  # Default to showing best prompt results
@@ -764,14 +921,22 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     
     # Get data for the clicked prompt
     prompts = enhanced_data['prompts']
-    similarities = enhanced_data['similarities']
-    positions = enhanced_data['positions']
+    coverages = enhanced_data['coverages']
+    mean_ranks = enhanced_data['mean_ranks']
+    mean_sims = enhanced_data['mean_sims']
+    ndcgs = enhanced_data['ndcgs']
+    aps = enhanced_data['aps']
+    mrrs = enhanced_data['mrrs']
     all_results = enhanced_data['all_results']
     best_idx = enhanced_data['best_idx']
     
     clicked_prompt = prompts[clicked_index]
-    clicked_similarity = similarities[clicked_index]
-    clicked_position = positions[clicked_index]
+    clicked_coverage = coverages[clicked_index]
+    clicked_mean_rank = mean_ranks[clicked_index]
+    clicked_mean_sim = mean_sims[clicked_index]
+    clicked_ndcg = ndcgs[clicked_index]
+    clicked_ap = aps[clicked_index]
+    clicked_mrr = mrrs[clicked_index]
     clicked_results = all_results[clicked_index]
     
     # Build image cards for the clicked prompt results
@@ -806,7 +971,10 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
 
     # Create enhanced table rows with updated button states
     table_rows = []
-    for i, (p, s) in enumerate(zip(prompts, similarities)):
+    for i, p in enumerate(prompts):
+        cov = coverages[i]
+        ndcg_val = ndcgs[i]
+        ap_val = aps[i]
         # Highlight the currently viewing button
         if i == clicked_index:
             button_color = "primary"
@@ -829,15 +997,17 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
         if i == best_idx:  # Highlight best prompt row
             row = html.Tr([
                 html.Td([html.I(className="fas fa-crown text-warning me-2"), p], className="fw-bold"),
-                html.Td([html.Span(str(positions[i]), className="badge bg-success")]),
-                html.Td([html.Span(f"{s:.4f}", className="badge bg-success")]),
+                html.Td([html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-success")]),
+                html.Td([html.Span(f"{ap_val*100:.0f}%", className="badge bg-success")]),
+                html.Td([html.Span(f"{int(cov*100)}%", className="badge bg-success")]),
                 html.Td(view_button)
             ], className="table-success")
         else:
             row = html.Tr([
                 html.Td(p),
-                html.Td(html.Span(str(positions[i]), className="badge bg-secondary")),
-                html.Td(html.Span(f"{s:.4f}", className="badge bg-secondary")),
+                html.Td(html.Span(f"{ndcg_val*100:.0f}%", className="badge bg-secondary")),
+                html.Td(html.Span(f"{ap_val*100:.0f}%", className="badge bg-secondary")),
+                html.Td(html.Span(f"{int(cov*100)}%", className="badge bg-secondary")),
                 html.Td(view_button)
             ])
         table_rows.append(row)
@@ -846,8 +1016,9 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     candidates_table = dbc.Table([
         html.Thead(html.Tr([
             html.Th([html.I(className="fas fa-edit me-2"), "Generated Prompts"], className="bg-light"),
-            html.Th([html.I(className="fas fa-hashtag me-2"), "Position"], className="bg-light"),
-            html.Th([html.I(className="fas fa-chart-line me-2"), "Similarity Score"], className="bg-light"),
+            html.Th([html.I(className="fas fa-chart-line me-2"), "nDCG"], className="bg-light"),
+            html.Th([html.I(className="fas fa-percentage me-2"), "AP"], className="bg-light"),
+            html.Th([html.I(className="fas fa-bullseye me-2"), "Coverage"], className="bg-light"),
             html.Th([html.I(className="fas fa-cogs me-2"), "Actions"], className="bg-light")
         ]), className="thead-light"),
         html.Tbody(table_rows)
@@ -874,7 +1045,7 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
                 "Currently Viewing" if clicked_index != best_idx else "Selected Best Prompt"
             ], className="alert-heading mb-2"),
             html.P(f'"{clicked_prompt}"', className="mb-1 font-monospace"),
-            html.Small(f"Position: {clicked_position} | Similarity Score: {clicked_similarity:.4f}", className="text-muted")
+            html.Small(f"nDCG: {clicked_ndcg*100:.0f}% | AP: {clicked_ap*100:.0f}% | Coverage: {clicked_coverage*100:.0f}%", className="text-muted")
         ], color="light" if clicked_index != best_idx else "light", 
            className="border-start border-info border-4" if clicked_index != best_idx else "border-start border-warning border-4"),
         
@@ -892,22 +1063,30 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
     [Output('prompt-enhancement-content', 'children'),
      Output('prompt-selection', 'options'),
      Output('prompt-selection', 'value')],
-    Input('cir-enhanced-prompts-data', 'data'),
+    [Input('cir-enhanced-prompts-data', 'data'),
+     Input('prompt-enh-fullscreen', 'data')],
     prevent_initial_call=True
 )
-def populate_prompt_enhancement_tab(enhanced_data):
+def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
     """Populate the prompt enhancement tab when new enhanced prompts are available"""
     if not enhanced_data:
         # Clear prompt enhancement tab when starting a new CIR query or no enhancement data
         return [], [], None
     prompts = enhanced_data.get('prompts', [])
-    sims = enhanced_data.get('similarities', [])
-    positions = enhanced_data.get('positions', [])
+    coverages = enhanced_data.get('coverages', [])
+    mean_ranks = enhanced_data.get('mean_ranks', [])
+    mean_sims = enhanced_data.get('mean_sims', [])
+    ndcgs = enhanced_data.get('ndcgs', [])
+    aps = enhanced_data.get('aps', [])
+    mrrs = enhanced_data.get('mrrs', [])
     best_idx = enhanced_data.get('best_idx')
+    
+    # Normalise fullscreen flag (None -> False)
+    is_fullscreen = bool(is_fullscreen)
     
     # Create styled cards for each enhanced prompt
     cards = []
-    for i, (prompt, sim) in enumerate(zip(prompts, sims)):
+    for i, (prompt, cov, mean_rank, mean_sim, ndcg, ap, mrr) in enumerate(zip(prompts, coverages, mean_ranks, mean_sims, ndcgs, aps, mrrs)):
         is_best = (i == best_idx)
         
         # Card classes and styling
@@ -918,15 +1097,37 @@ def populate_prompt_enhancement_tab(enhanced_data):
         icon_class = "fas fa-crown text-warning" if is_best else "fas fa-magic text-info"
         title_text = "Best" if is_best else f"#{i+1}"
         
-        # Metrics badges with better styling
-        position_badge = html.Span(
-            str(positions[i]), 
-            className="prompt-metric-badge bg-primary text-white"
-        )
-        similarity_badge = html.Span(
-            f"{sim:.3f}", 
-            className="prompt-metric-badge bg-secondary text-white"
-        )
+        # Metric badges
+        coverage_badge = html.Span(f"{cov*100:.0f}%", className="prompt-metric-badge bg-primary text-white")
+        mean_rank_badge = html.Span(f"{mean_rank:.2f}", className="prompt-metric-badge bg-secondary text-white")
+        mean_sim_badge = html.Span(f"{mean_sim:.4f}", className="prompt-metric-badge bg-success text-white")
+        ndcg_badge = html.Span(f"{ndcg:.4f}", className="prompt-metric-badge bg-info text-white")
+        ap_badge = html.Span(f"{ap:.4f}", className="prompt-metric-badge bg-warning text-white")
+        mrr_badge = html.Span(f"{mrr:.4f}", className="prompt-metric-badge bg-danger text-white")
+        
+        # ----------------------------------------------------------------
+        # Build metric badge row – show ALL metrics when fullscreen else
+        # show the compact subset (Coverage, nDCG, AP).
+        # ----------------------------------------------------------------
+        metric_children = [
+            html.Span("Coverage ", className="prompt-metric-label"),
+            coverage_badge,
+            html.Span(" nDCG ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+            ndcg_badge,
+            html.Span(" AP ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+            ap_badge,
+        ]
+
+        if is_fullscreen:
+            # Append the extra metrics when in fullscreen
+            metric_children.extend([
+                html.Span(" Mean Rank ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                mean_rank_badge,
+                html.Span(" Mean Sim ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                mean_sim_badge,
+                html.Span(" MRR ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
+                mrr_badge,
+            ])
         
         card = html.Div([
             dbc.Card([
@@ -937,12 +1138,7 @@ def populate_prompt_enhancement_tab(enhanced_data):
                             html.I(className=f"{icon_class} prompt-card-icon"),
                             html.Span(title_text, className="prompt-card-title")
                         ], style={'display': 'flex', 'alignItems': 'center'}),
-                        html.Div([
-                            html.Span("Rank ", className="prompt-metric-label"),
-                            position_badge,
-                            html.Span(" Sim ", className="prompt-metric-label", style={'marginLeft': '0.3rem'}),
-                            similarity_badge
-                        ], className="prompt-card-metrics")
+                        html.Div(metric_children, className="prompt-card-metrics")
                     ], className="prompt-card-header"),
                     
                     # Prompt text with improved styling
@@ -1006,7 +1202,8 @@ def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, vi
         new_selected = clicked_index
     
     prompts = enhanced_data.get('prompts', [])
-    positions = enhanced_data.get('positions', [])
+    coverages = enhanced_data.get('coverages', [])
+    mean_ranks = enhanced_data.get('mean_ranks', [])
     best_idx = enhanced_data.get('best_idx')
     card_styles = []
     # Enhanced prompt cards styling with inline styles for selection states
@@ -1053,7 +1250,8 @@ def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data, vi
         raise PreventUpdate
 
     prompts = enhanced_data.get('prompts', [])
-    positions = enhanced_data.get('positions', [])
+    coverages = enhanced_data.get('coverages', [])
+    mean_ranks = enhanced_data.get('mean_ranks', [])
     best_idx = enhanced_data.get('best_idx')
     card_styles = []
     
@@ -1167,7 +1365,10 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
             xfq, yfq = None, None  # Final query only shown for UMAP
         os.unlink(tmp.name)
     # Reset CIR traces
-    scatterplot_fig['data'] = scatterplot_fig['data'][:3]
+    scatterplot_fig['data'] = [
+        trace for trace in scatterplot_fig['data']
+        if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
+    ]
     scatterplot_fig['layout']['images'] = []
     main = scatterplot_fig['data'][0]
     xs, ys, cds = main['x'], main['y'], main['customdata']
@@ -1188,10 +1389,16 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
         elif v in cmpk:
             xk.append(xi); yk.append(yi)
     # Plot Query and Final Query
+    if xk:
+        trace_k = go.Scatter(x=xk, y=yk, mode='markers', marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
+        scatterplot_fig['data'].append(trace_k.to_plotly_json())
     if xq is not None:
         scatterplot_fig['data'].append(go.Scatter(x=[xq],y=[yq],mode='markers',marker=dict(color=config.QUERY_COLOR,size=12,symbol='star'),name='Query').to_plotly_json())
     if xfq is not None:
         scatterplot_fig['data'].append(go.Scatter(x=[xfq],y=[yfq],mode='markers',marker=dict(color=config.FINAL_QUERY_COLOR,size=10,symbol='diamond'),name='Final Query').to_plotly_json())
+    if x1:
+        trace_1 = go.Scatter(x=x1, y=y1, mode='markers', marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
+        scatterplot_fig['data'].append(trace_1.to_plotly_json())
     # Wordcloud
     counts = df.loc[topk_ids]['class_name'].value_counts()
     if len(counts):
@@ -1211,6 +1418,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     Output('cir-toggle-button', 'children', allow_duplicate=True),
     Output('cir-toggle-button', 'color', allow_duplicate=True),
     Output('cir-toggle-button', 'style', allow_duplicate=True),
+    Output('cir-toggle-button', 'disabled', allow_duplicate=True),
     Output('cir-toggle-state', 'data', allow_duplicate=True),
     Output('viz-mode', 'data', allow_duplicate=True),
     Output('viz-selected-ids', 'data', allow_duplicate=True),
@@ -1224,11 +1432,12 @@ def clear_results_on_model_change(_):
         html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"),
         'Visualize CIR results',
         'success',
-        {'display': 'none', 'color': 'black'},
-        False,
+        no_update,
+        True,   # keep disabled as there are no results
+        False,  # Reset viz-mode toggle state
         False,  # Reset viz-mode to OFF
         [],     # Clear viz-selected-ids
-        {'display': 'block', 'color': 'black'}
+        {'display': 'none'}
     )
 
 # -----------------------------------------------------------------------------
@@ -1640,3 +1849,52 @@ def clear_visual_selections_on_cir_toggle(n_clicks, viz_mode, current_classnames
 
     # Return cleared selections and updated figure
     return new_classnames, [], new_fig
+
+# -----------------------------------------------------------------------------
+# Loading visualisation for Prompt Enhancement
+# -----------------------------------------------------------------------------
+
+@callback(
+    Output('prompt-enhancement-content', 'children', allow_duplicate=True),
+    Input('enhance-prompt-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def show_prompt_enhancement_loading(n_clicks):
+    """Display a spinner + friendly message while prompt enhancement is running.
+
+    This callback fires immediately when the user clicks the *Enhance prompt*
+    button and renders a loading visual inside the **Prompt Enhancement** card.
+    Once the heavy `enhance_prompt` callback finishes, the regular
+    `populate_prompt_enhancement_tab` callback will overwrite this content with
+    the actual results, so we mark this output as *allow_duplicate=True*.
+    """
+    from dash.exceptions import PreventUpdate
+    if not n_clicks:
+        raise PreventUpdate
+
+    return html.Div([
+        dbc.Spinner(color="primary", type="grow", size="lg", spinnerClassName="mb-3"),
+        html.Span("Generating enhanced prompts…", className="text-muted fw-semibold")
+    ], className="d-flex flex-column align-items-center justify-content-center p-4")
+
+# -----------------------------------------------------------------------------
+# Loading visualisation for normal CIR search (Query Results component)
+# -----------------------------------------------------------------------------
+
+@callback(
+    Output('cir-results', 'children', allow_duplicate=True),
+    Input('cir-search-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def show_cir_search_loading(n_clicks):
+    """Display a spinner & message in the Query Results card while the CIR
+    search is running. It is intentionally lightweight and will be overwritten
+    by `perform_cir_search` once the results are ready."""
+    from dash.exceptions import PreventUpdate
+    if not n_clicks:
+        raise PreventUpdate
+
+    return html.Div([
+        dbc.Spinner(color="primary", type="border", size="lg", spinnerClassName="mb-3"),
+        html.Span("Retrieving images…", className="text-muted fw-semibold")
+    ], className="d-flex flex-column align-items-center justify-content-center p-4")

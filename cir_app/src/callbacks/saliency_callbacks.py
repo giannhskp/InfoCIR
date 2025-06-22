@@ -180,7 +180,6 @@ def preprocess_saliency_data(saliency_data):
 
 @callback(
     [Output('saliency-content', 'children'),
-     Output('saliency-navigation', 'style'),
      Output('saliency-current-info', 'children'),
      Output('saliency-prev-btn', 'disabled'),
      Output('saliency-next-btn', 'disabled')],
@@ -201,7 +200,7 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state, sali
                 html.I(className="fas fa-eye-slash text-muted me-2"),
                 html.Span("Enable visualization to view saliency", className="text-muted small")
             ], className="text-center p-2")
-        ], {'display': 'none'}, "", True, True)
+        ], "", True, True)
     
     if not saliency_data or not saliency_data.get('save_directory'):
         return ([
@@ -209,7 +208,7 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state, sali
                 html.I(className="fas fa-brain text-muted me-2"),
                 html.Span("No saliency data available", className="text-muted small")
             ], className="text-center p-2")
-        ], {'display': 'none'}, "", True, True)
+        ], "", True, True)
     
     # Use cached pairs
     pairs = _current_pairs
@@ -220,7 +219,7 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state, sali
                 html.I(className="fas fa-exclamation-triangle text-warning me-2"),
                 html.Span("No saliency maps found", className="text-muted small")
             ], className="text-center p-2")
-        ], {'display': 'none'}, "", True, True)
+        ], "", True, True)
     
     # Ensure current_index is within bounds
     if current_index < 0:
@@ -297,7 +296,6 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state, sali
     next_disabled = current_index >= len(pairs) - 1
     
     return (content, 
-            {'display': 'block'}, 
             nav_info, 
             prev_disabled, 
             next_disabled)
@@ -376,9 +374,9 @@ def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_sal
     if not dir_to_use:
         raise PreventUpdate
 
-    # When directory changes, reset current index to 0 via preprocessing chain
-    return {'save_directory': dir_to_use} 
-
+    new_data = dict(current_saliency)
+    new_data['save_directory'] = dir_to_use
+    return new_data
 
 # ------------------------------------------------------------
 # Token Attribution display callback
@@ -386,7 +384,6 @@ def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_sal
 
 @callback(
     [Output('token-attribution-content', 'children', allow_duplicate=True),
-     Output('token-attribution-navigation', 'style'),
      Output('token-attribution-current-info', 'children'),
      Output('ta-prev-btn', 'disabled'),
      Output('ta-next-btn', 'disabled')],
@@ -407,7 +404,7 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
                 html.I(className="fas fa-eye-slash text-muted me-2"),
                 html.Span("Enable visualization to view token attribution", className="text-muted small")
             ], className="text-center p-2"),
-            {'display':'none'}, "", True, True
+            "", True, True
         )
 
     # Validate data availability
@@ -416,7 +413,7 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
             html.Div([
                 html.I(className="fas fa-info-circle text-muted me-2"),
                  html.Span("Token attribution not available", className="text-muted")], className="p-2"),
-            {'display':'none'}, "", True, True
+            "", True, True
         )
 
     text_attr = saliency_data.get('text_attribution', {})
@@ -463,7 +460,7 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
                 html.I(className="fas fa-info-circle text-muted me-2"),
                 html.Span("No candidate token attribution data found", className="text-muted")
             ], className="p-2"),
-            {'display':'none'}, "", True, True
+            "", True, True
         )
 
     # Ensure current_index is within bounds
@@ -490,7 +487,7 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
                 html.I(className="fas fa-info-circle text-muted me-2"),
                 html.Span("Token attribution data empty", className="text-muted")
             ], className="p-2"),
-            {'display':'none'}, "", True, True
+            "", True, True
         )
 
     # Resolve duplicate token labels by appending incremental suffix
@@ -521,8 +518,8 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
         title_font_size = 16
         axis_font_size = 12
     else:
-        chart_height = 180
-        chart_margin = dict(l=20, r=20, t=25, b=70)
+        chart_height = 130
+        chart_margin = dict(l=20, r=20, t=25, b=50)
         title_font_size = 11
         axis_font_size = 9
     
@@ -552,7 +549,7 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
     prev_dis = current_index <= 0
     next_dis = current_index >= len(candidate_attributions) - 1
 
-    return (graph, {'display': 'block', 'padding': '0.25rem'}, nav_info, prev_dis, next_dis)
+    return (graph, nav_info, prev_dis, next_dis)
 
 
 # ------------------------------------------------------------
