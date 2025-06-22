@@ -42,12 +42,13 @@ class Dataset:
                 )
                 cir_systems.cir_system_searle.create_database(split=config.CIR_SPLIT)
 
-        with cir_systems.lock:
-            if cir_systems.cir_system_freedom is None:
-                cir_systems.cir_system_freedom = FreedomRetrievalSystem(
-                    load_features=config.CIR_LOAD_FEATURES, features_path=config.CIR_FREEDOM_FEATURES_PATH
-                )
-                cir_systems.cir_system_freedom.create_database(config.WORK_DIR)
+        # COMMENTED OUT: Freedom CIR system causing Open Images V7 error
+        # with cir_systems.lock:
+        #     if cir_systems.cir_system_freedom is None:
+        #         cir_systems.cir_system_freedom = FreedomRetrievalSystem(
+        #             load_features=config.CIR_LOAD_FEATURES, features_path=config.CIR_FREEDOM_FEATURES_PATH
+        #         )
+        #         cir_systems.cir_system_freedom.create_database(config.WORK_DIR)
         
         # Initialize the saliency manager
         with cir_systems.lock:
@@ -76,17 +77,19 @@ class Dataset:
         features_path = Path(config.CIR_FEATURES_PATH)
         umap_reducer_path = Path(config.WORK_DIR)
         
-        freedom_save_dir = os.path.join(config.WORK_DIR, "clip_features")
-        freedom_corpus_file = os.path.join(freedom_save_dir, "corpus", "open_image_v7_class_names.pkl")
-        freedom_features_file = os.path.join(freedom_save_dir, "imagenet_r", "full_imagenet_r_features.pkl")
-        freedom_names_file = os.path.join(freedom_save_dir, "imagenet_r", "full_imagenet_r_names.pkl")
+        # COMMENTED OUT: Freedom system files no longer required
+        # freedom_save_dir = os.path.join(config.WORK_DIR, "clip_features")
+        # freedom_corpus_file = os.path.join(freedom_save_dir, "corpus", "open_image_v7_class_names.pkl")
+        # freedom_features_file = os.path.join(freedom_save_dir, "imagenet_r", "full_imagenet_r_features.pkl")
+        # freedom_names_file = os.path.join(freedom_save_dir, "imagenet_r", "full_imagenet_r_names.pkl")
 
         return (os.path.isfile(config.AUGMENTED_DATASET_PATH) and os.path.isfile(features_path / "index_features.pt")
                 and os.path.isfile(features_path / "index_names.pkl")
-                and os.path.isfile(umap_reducer_path / "umap_reducer.pkl")
-                and os.path.isfile(freedom_corpus_file)
-                and os.path.isfile(freedom_features_file)
-                and os.path.isfile(freedom_names_file))
+                and os.path.isfile(umap_reducer_path / "umap_reducer.pkl"))
+                # REMOVED: Freedom system file checks
+                # and os.path.isfile(freedom_corpus_file)
+                # and os.path.isfile(freedom_features_file)
+                # and os.path.isfile(freedom_names_file))
     
     @staticmethod
     def source_files_exist():

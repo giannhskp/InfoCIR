@@ -6,14 +6,22 @@ from src import config
 import plotly.graph_objects as go
 
 def highlight_class_on_scatterplot(scatterplot, class_names):
-    """Highlight specific classes on the scatterplot"""
+    """
+    Highlight specific classes on the scatterplot.
+    
+    Args:
+        scatterplot: Plotly figure dictionary
+        class_names: List of class names to highlight
+    """
     if class_names:
-        colors = Dataset.get()['class_name'].map(lambda x: config.SCATTERPLOT_SELECTED_COLOR if x in class_names else config.SCATTERPLOT_COLOR)
+        colors = Dataset.get()['class_name'].map(
+            lambda x: config.SCATTERPLOT_SELECTED_COLOR if x in class_names else config.SCATTERPLOT_COLOR
+        )
     else:
         colors = config.SCATTERPLOT_COLOR
     scatterplot['data'][0]['marker'] = {'color': colors}
 
-    # Update legend for selected class based on whether any class is highlighted.
+    # Update legend for selected class based on whether any class is highlighted
     _update_legend_for_selected_class(
         scatterplot,
         class_highlighted=bool(class_names),
@@ -21,7 +29,14 @@ def highlight_class_on_scatterplot(scatterplot, class_names):
     )
 
 def highlight_selected_image_and_class(scatterplot, selected_image_id, class_names):
-    """Highlight a specific selected image and its class with different colors"""
+    """
+    Highlight a specific selected image and its class with different colors.
+    
+    Args:
+        scatterplot: Plotly figure dictionary
+        selected_image_id: ID of the selected image
+        class_names: List of class names to highlight
+    """
     df = Dataset.get()
     
     # Check if CIR traces are active
@@ -53,7 +68,14 @@ def highlight_selected_image_and_class(scatterplot, selected_image_id, class_nam
     )
 
 def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
-    """Handle image selection when CIR traces are active"""
+    """
+    Handle image selection when CIR traces are active.
+    
+    Args:
+        scatterplot: Plotly figure dictionary
+        selected_image_id: ID of the selected image
+        class_names: List of class names to highlight
+    """
     df = Dataset.get()
     
     # Find main data trace and CIR traces
@@ -85,7 +107,7 @@ def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
     if selected_x is None:
         return  # Selected image not found in data
     
-    # Keep points in their CIR traces; just overlay selected point.
+    # Keep points in their CIR traces; just overlay selected point
     selected_was_top1 = any(
         trace.get('name') == 'Top-1' and len(trace['x']) == 1 and
         abs(trace['x'][0]-selected_x)<1e-10 and abs(trace['y'][0]-selected_y)<1e-10
@@ -118,9 +140,9 @@ def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
     scatterplot['data'][0]['marker'] = {'color': colors}
 
 def _update_legend_for_selected_image(scatterplot):
-    """Update legend to include selected image color when an image is selected"""
+    """Update legend to include selected image color when an image is selected."""
     
-    # Identify and preserve CIR traces (Top-K, Top-1, Query, Final Query) and Selected Image trace
+    # Identify and preserve CIR traces and Selected Image trace
     cir_traces = []
     selected_image_trace = None
     
@@ -176,23 +198,19 @@ def _update_legend_for_selected_image(scatterplot):
 # ---------------------------------------------------------------------------
 
 def _update_legend_for_selected_class(scatterplot, class_highlighted: bool, color: str):
-    """Add or remove the 'selected class' legend trace.
-
-    Parameters
-    ----------
-    scatterplot : dict
-        Plotly figure JSON.
-    class_highlighted : bool
-        Whether a class is currently highlighted on the scatterplot.
-    color : str
-        Colour to use for the legend marker when a class is highlighted.
     """
+    Add or remove the 'selected class' legend trace.
 
-    # First, remove any existing 'selected class' legend traces.
+    Args:
+        scatterplot: Plotly figure JSON
+        class_highlighted: Whether a class is currently highlighted on the scatterplot
+        color: Colour to use for the legend marker when a class is highlighted
+    """
+    # First, remove any existing 'selected class' legend traces
     scatterplot['data'] = [trace for trace in scatterplot['data'] if trace.get('name') != 'selected class']
 
     if class_highlighted:
-        # Append new legend trace at the end so it shows up in the legend.
+        # Append new legend trace at the end so it shows up in the legend
         scatterplot['data'].append(
             go.Scatter(
                 x=[None],
@@ -248,6 +266,7 @@ def create_scatterplot_figure(projection):
         x_col, y_col = 'umap_x', 'umap_y'
     else:
         raise Exception('Projection not found')
+
 
     # Main scatter trace
     scatter_trace = go.Scatter(

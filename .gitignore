@@ -57,3 +57,10 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+
+job_files/
+*.out
+
+imagenet-r/
+old_experiments/
+old_jobs_results_summary.csv
