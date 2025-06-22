@@ -21,14 +21,14 @@ class Dataset:
     count = None
     
     @staticmethod
-    def load():
+    def load(reload=False):
         """Load the augmented dataset"""
         Dataset.data = pd.read_csv(config.AUGMENTED_DATASET_PATH, index_col='image_id')
         Dataset.count = Dataset.data['class_name'].value_counts()
 
         # Initialize the CIR system
         with cir_systems.lock:
-            if cir_systems.cir_system_searle is None:
+            if cir_systems.cir_system_searle is None or reload:
                 cir_systems.cir_system_searle = ComposedImageRetrievalSystem(
                     dataset_path=config.CIR_DATASET_PATH,
                     dataset_type=config.CIR_DATASET_TYPE,

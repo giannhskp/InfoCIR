@@ -278,7 +278,7 @@ def create_scatterplot_figure(projection):
         showlegend=False,
         marker=dict(
             color=config.SCATTERPLOT_COLOR,
-            size=7,
+            size=2,
             opacity=0.6,
             symbol='circle'
         ),
