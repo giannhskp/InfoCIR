@@ -82,6 +82,7 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
      Output('viz-mode', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
+     Output('cir-selected-image-ids', 'data', allow_duplicate=True),
      Output('saliency-data', 'data'),
      Output('wordcloud', 'list', allow_duplicate=True),
      Output('histogram', 'figure', allow_duplicate=True)],
@@ -114,6 +115,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             None,                  # cir-enhanced-prompts-data
             False,                 # viz-mode
             [],                    # viz-selected-ids
+            [],                    # cir-selected-image-ids
             None,                  # saliency-data
             [],                    # wordcloud
             histogram.draw_histogram(None)  # histogram figure
@@ -470,6 +472,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             None,                      # cir-enhanced-prompts-data
             False,                     # viz-mode – OFF by default
             [],                        # viz-selected-ids
+            [],                        # cir-selected-image-ids
             saliency_summary,          # saliency-data
             wc,                        # wordcloud
             hist                       # histogram figure
@@ -494,6 +497,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             None,                        # cir-enhanced-prompts-data
             False,                       # viz-mode
             [],                          # viz-selected-ids
+            [],                          # cir-selected-image-ids
             None,                        # saliency-data
             [],                          # wordcloud
             histogram.draw_histogram(None)  # histogram figure
@@ -610,6 +614,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     Enhance the user's prompt via a small LLM, compare each to the selected image, choose the best,
     rerun CIR with that prompt, and display diagnostics.
     """
+    print(f"Performing prompt enhancement for {len(selected_image_ids)} selected images")
+    print(f"Selected image IDs: {selected_image_ids}")
+    
     import os
     # Guard against missing data
     if not search_data or not selected_image_ids:

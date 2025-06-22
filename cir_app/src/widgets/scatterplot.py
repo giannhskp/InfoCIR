@@ -365,6 +365,6 @@ def get_data_selected_on_scatterplot(scatterplot_fig):
     # --------------------------------------------------------------
     if any(tr.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query']
            for tr in scatterplot_fig.get('data', [])):
-        return scatterplot_fig
+        return data_selected
 
     return data_selected 
