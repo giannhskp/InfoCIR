@@ -1145,8 +1145,12 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
 def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
     """Populate the prompt enhancement tab when new enhanced prompts are available"""
     if not enhanced_data:
-        # Clear prompt enhancement tab when starting a new CIR query or no enhancement data
-        return [], [], None
+        # Show informational message when no enhancement data is available
+        message_content = html.Div([
+            html.I(className="fas fa-info-circle text-muted me-2"),
+            html.Span("Run prompt enhancement to view enhanced prompts.", className="text-muted")
+        ], className="d-flex align-items-center justify-content-center p-4")
+        return message_content, [], None
     prompts = enhanced_data.get('prompts', [])
     coverages = enhanced_data.get('coverages', [])
     mean_ranks = enhanced_data.get('mean_ranks', [])
