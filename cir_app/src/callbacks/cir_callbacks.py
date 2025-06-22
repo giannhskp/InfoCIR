@@ -81,6 +81,7 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
      Output('viz-mode', 'data', allow_duplicate=True),
+     Output('cir-selected-image-ids', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
      Output('saliency-data', 'data'),
      Output('wordcloud', 'list', allow_duplicate=True),
@@ -113,6 +114,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             [],                    # cir-enhance-results
             None,                  # cir-enhanced-prompts-data
             False,                 # viz-mode
+            [],                    # cir-selected-image-ids
             [],                    # viz-selected-ids
             None,                  # saliency-data
             [],                    # wordcloud
@@ -228,15 +230,12 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                         'height': '100%'
                     }
                 )
-                # Automatically pre-select the TOP-2 image (idx == 1) for PROMPT-ENHANCEMENT
-                # mode ONLY (viz_mode == False). When visualization mode is ON we do NOT
-                # want any card to start in the green "selected" state.
-                preselected = (not viz_mode) and (card_index == 1)
+                # Highlight if this image was already selected before rebuilding
                 card = html.Div(
                     inner_card,
                     id={'type': 'cir-result-card', 'index': img_name},
                     n_clicks=0,
-                    className=f"result-card-wrapper{' selected' if preselected else ''}",
+                    className="result-card-wrapper",
                     style={'height': '100%'}
                 )
             if card_index == 0:
@@ -465,10 +464,11 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'Hide CIR results',        # cir-toggle-button text (now ON)
             'warning',                 # cir-toggle-button color
             True,                      # cir-toggle-state – ON
-            {"display": "none"},     # cir-run-button style – remain hidden
+            {'display': 'none'},     # cir-run-button style – hidden
             [],                        # cir-enhance-results
             None,                      # cir-enhanced-prompts-data
             False,                     # viz-mode – OFF by default
+            [],                        # cir-selected-image-ids
             [],                        # viz-selected-ids
             saliency_summary,          # saliency-data
             wc,                        # wordcloud
@@ -489,10 +489,11 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'Visualize CIR results',     # button text
             'success',                   # button color
             False,                       # cir-toggle-state OFF
-            {"display": "none"},        # cir-run-button style – hidden
+            {'display': 'none'},        # cir-run-button style – hidden
             [],                          # cir-enhance-results
             None,                        # cir-enhanced-prompts-data
             False,                       # viz-mode
+            [],                          # cir-selected-image-ids
             [],                          # viz-selected-ids
             None,                        # saliency-data
             [],                          # wordcloud
@@ -565,12 +566,29 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames, viz_mode, sel
     if not ctx.triggered:
         raise PreventUpdate
 
-    # Parse which card was clicked
+    # --------------------------------------------------------------
+    # Ignore the callback invocation that happens when the layout is
+    # first rendered. During that moment Dash sets n_clicks = 0 for
+    # every result card which would otherwise be interpreted here as
+    # a *click*. We only care about genuine user clicks where the
+    # clicked card's n_clicks > 0.
+    # --------------------------------------------------------------
     triggered_id_raw = ctx.triggered[0]['prop_id'].split('.')[0]
     try:
         trig_dict = json.loads(triggered_id_raw)
         clicked_idx = str(trig_dict.get('index'))
     except Exception:
+        raise PreventUpdate
+
+    # Find the n_clicks value corresponding to the triggered card
+    clicked_n_clicks = None
+    for inp_dict, n_val in zip(ctx.inputs_list[0], n_clicks_list):
+        if str(inp_dict['id']['index']) == clicked_idx:
+            clicked_n_clicks = n_val
+            break
+
+    if clicked_n_clicks is None or clicked_n_clicks == 0:
+        # Layout-initialisation trigger – ignore
         raise PreventUpdate
 
     # Ensure list initialised
@@ -1577,6 +1595,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     Output('cir-toggle-button', 'disabled', allow_duplicate=True),
     Output('cir-toggle-state', 'data', allow_duplicate=True),
     Output('viz-mode', 'data', allow_duplicate=True),
+    Output('cir-selected-image-ids', 'data', allow_duplicate=True),
     Output('viz-selected-ids', 'data', allow_duplicate=True),
     Output('cir-run-button', 'style', allow_duplicate=True),
     Input('custom-dropdown', 'value'),
@@ -1592,8 +1611,9 @@ def clear_results_on_model_change(_):
         True,   # keep disabled as there are no results
         False,  # Reset viz-mode toggle state
         False,  # Reset viz-mode to OFF
+        [],     # Clear cir-selected-image-ids
         [],     # Clear viz-selected-ids
-        {'display': 'none'}
+        {'display': 'none'},  # cir-run-button style – hidden
     )
 
 # -----------------------------------------------------------------------------
@@ -1603,7 +1623,7 @@ def clear_results_on_model_change(_):
 
 # Helper now also receives viz_mode so that the Visualize toggle button is rendered
 # with the correct ON/OFF label and color each time the Results layout is rebuilt.
-def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mode: bool = False):
+def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mode: bool = False, preselected_ids=None):
     """Return a Dash HTML div containing the grid of result cards.
 
     Parameters
@@ -1614,6 +1634,9 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
 
     df = Dataset.get()
     from src.callbacks.saliency_callbacks import load_and_resize_image  # local import
+
+    # Normalise *preselected_ids* to a set of strings for fast lookup
+    preselected_set = set(str(x) for x in (preselected_ids or []))
 
     cards = []
     for idx, (img_name, score) in enumerate(result_tuples):
@@ -1678,12 +1701,11 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
                 ], className="result-card-wrapper position-relative", style={"cursor": "default", "height": "100%"})
         else:
             inner = dbc.Card(card_body, className="result-card", style={"border": "1px solid #dee2e6", "borderRadius": "6px", "height": "100%"})
-            # Automatically pre-select the TOP-2 image (idx == 1) by applying the
-            # "selected" CSS class to its wrapper so that the green highlight is
-            # visible immediately after the CIR results are displayed.
-            preselected = (not viz_mode) and (idx == 1)
+            # Highlight if this image was previously selected
+            preselected = str(img_name) in preselected_set
+
             if clickable:
-                # Include ID & n_clicks so that selection callbacks work
+                # Interactive wrapper (used in prompt-enhancement mode)
                 wrapper = html.Div(
                     inner,
                     id={"type": "cir-result-card", "index": str(img_name)},
@@ -1692,10 +1714,7 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
                     style={"height": "100%"},
                 )
             else:
-                # Non-interactive wrapper (no ID) for enhanced-prompt results.
-                # Still apply preselection highlight for the TOP-2 image so that
-                # the green border is visible even when the cards are rendered
-                # in a non-clickable context (e.g., enhanced-prompt results).
+                # Non-interactive wrapper for enhanced prompt results
                 wrapper = html.Div(
                     inner,
                     className=f"result-card-wrapper{' selected' if preselected else ''}",
@@ -1733,10 +1752,11 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
      Output("enhance-prompt-button", "disabled", allow_duplicate=True),
      Output("enhance-prompt-button", "color", allow_duplicate=True)],
     Input("prompt-selection", "value"),
-    [State("cir-enhanced-prompts-data", "data"), State("cir-search-data", "data"), State("viz-mode", "data")],
+    [State("cir-enhanced-prompts-data", "data"), State("cir-search-data", "data"), State("viz-mode", "data"),
+     State('cir-selected-image-ids', 'data')],
     prevent_initial_call=True,
 )
-def update_query_results_for_prompt_selection(selected_idx, enhanced_data, search_data, viz_mode):
+def update_query_results_for_prompt_selection(selected_idx, enhanced_data, search_data, viz_mode, selected_ids):
     """Render top-k images of the selected enhanced prompt (or original query).
 
     • When *selected_idx* >= 0 we display the corresponding enhanced-prompt results
@@ -1765,7 +1785,9 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
         original_results = search_data.get("original_results")
         if not original_results:
             raise PreventUpdate
-        layout = _build_query_results_layout([(name, score) for name, score in original_results], clickable=True, viz_mode=viz_mode)
+        # Highlight previously selected ideal images when returning to baseline results
+        pre_ids = selected_ids if not viz_mode else None
+        layout = _build_query_results_layout([(name, score) for name, score in original_results], clickable=True, viz_mode=viz_mode, preselected_ids=pre_ids)
         # Do **not** change enhance-prompt button state here – let other callbacks
         # (image-selection) manage it. Hence we use no_update.
         from dash import no_update
@@ -1911,13 +1933,23 @@ def select_images_for_visualization(n_clicks_list, current_classnames, viz_mode,
     if not ctx.triggered:
         raise PreventUpdate
 
-    # Determine which card triggered the callback
+    # Ignore automatic callbacks during initial layout build (n_clicks == 0)
     triggered_id_raw = ctx.triggered[0]['prop_id'].split('.')[0]
     try:
         trig_dict = json.loads(triggered_id_raw)
         clicked_id = str(trig_dict.get('index'))
     except Exception:
-        # Should not happen
+        raise PreventUpdate
+
+    # Determine n_clicks value for the triggered card
+    clicked_n = None
+    for inp_dict, n_val in zip(ctx.inputs_list[0], n_clicks_list):
+        if str(inp_dict['id']['index']) == clicked_id:
+            clicked_n = n_val
+            break
+
+    if clicked_n is None or clicked_n == 0:
+        # Spurious callback during layout creation – ignore
         raise PreventUpdate
 
     # Initialize list
