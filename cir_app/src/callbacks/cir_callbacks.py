@@ -1391,7 +1391,6 @@ def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data, vi
     [Output('gallery', 'children', allow_duplicate=True),
      Output('wordcloud', 'list', allow_duplicate=True),
      Output('histogram', 'figure', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True),
      Output('selected-image-data', 'data', allow_duplicate=True),
      Output('selected-gallery-image-ids', 'data', allow_duplicate=True)],
     Input('prompt-selection', 'value'),
@@ -1537,42 +1536,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
         else:
             xfq, yfq = None, None  # Final query only shown for UMAP
         os.unlink(tmp.name)
-    # Reset CIR traces
-    scatterplot_fig['data'] = [
-        trace for trace in scatterplot_fig['data']
-        if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
-    ]
-    scatterplot_fig['layout']['images'] = []
-    main = scatterplot_fig['data'][0]
-    xs, ys, cds = main['x'], main['y'], main['customdata']
-    
-    # Reset main trace colours without touching other marker attrs (size, opacity…)
-    from src.widgets.scatterplot import _set_marker_colors as _set_marker_colors_helper
-    _set_marker_colors_helper(main, config.SCATTERPLOT_COLOR)
-    # Plot Top-K and Top-1
-    x1, y1, xk, yk = [], [], [], []
-    cmp1 = int(top1_id) if top1_id is not None else None
-    cmpk = [int(i) for i in topk_ids]
-    for xi, yi, val in zip(xs, ys, cds):
-        try:
-            v = int(val)
-        except Exception:
-            v = val
-        if v == cmp1:
-            x1.append(xi); y1.append(yi)
-        elif v in cmpk:
-            xk.append(xi); yk.append(yi)
-    # Plot Query and Final Query
-    if xk:
-        trace_k = go.Scatter(x=xk, y=yk, mode='markers', marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
-        scatterplot_fig['data'].append(trace_k.to_plotly_json())
-    if xq is not None:
-        scatterplot_fig['data'].append(go.Scatter(x=[xq],y=[yq],mode='markers',marker=dict(color=config.QUERY_COLOR,size=12,symbol='star'),name='Query').to_plotly_json())
-    if xfq is not None:
-        scatterplot_fig['data'].append(go.Scatter(x=[xfq],y=[yfq],mode='markers',marker=dict(color=config.FINAL_QUERY_COLOR,size=10,symbol='diamond'),name='Final Query').to_plotly_json())
-    if x1:
-        trace_1 = go.Scatter(x=x1, y=y1, mode='markers', marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
-        scatterplot_fig['data'].append(trace_1.to_plotly_json())
+    # Scatterplot updates now handled by unified controller
     # Wordcloud
     counts = df.loc[topk_ids]['class_name'].value_counts()
     if len(counts):
@@ -1584,7 +1548,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     # Clear any previous gallery selections when switching to enhanced prompt results
     gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,[])
     hist = histogram.draw_histogram(cir_df)
-    return gal, wc, hist, scatterplot_fig, None, []
+    return gal, wc, hist, None, []
 
 @callback(
     Output('model-change-flag', 'children'),
@@ -1806,7 +1770,7 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
      Output('cir-results', 'children', allow_duplicate=True),
      Output('cir-selected-image-ids', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+],
     Input('visualize-toggle-button', 'n_clicks'),
     [State('viz-mode', 'data'),
      State('prompt-selection', 'value'),
@@ -1823,7 +1787,7 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
         label = 'Visualize ON' if current_mode else 'Visualize OFF'
         color = 'success' if current_mode else 'secondary'
         from dash import no_update
-        return current_mode, label, color, no_update, no_update, no_update, no_update
+        return current_mode, label, color, no_update, no_update, no_update
     
     # Toggle the mode
     new_mode = not current_mode
@@ -1834,19 +1798,11 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
     cleared_cir_selected = []
     cleared_viz_selected = []
 
-    # Clear visualization traces from scatterplot when switching modes
-    import copy
-    if scatterplot_fig is not None:
-        updated_fig = copy.deepcopy(scatterplot_fig)
-        # Remove Selected Images trace when switching modes
-        updated_fig['data'] = [tr for tr in updated_fig['data'] if tr.get('name') != 'Selected Images']
-    else:
-        from dash import no_update
-        updated_fig = no_update
+    # Scatterplot updates now handled by unified controller
 
     # Rebuild Query Results layout with new viz_mode state
     if search_data is None:
-        return new_mode, label, color, no_update, cleared_cir_selected, cleared_viz_selected, updated_fig
+        return new_mode, label, color, no_update, cleared_cir_selected, cleared_viz_selected
 
     # Determine which results to show (baseline or selected enhanced prompt)
     if selected_idx is not None and selected_idx >= 0 and enhanced_data is not None:
@@ -1864,17 +1820,15 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
         else:
             layout = no_update
 
-    return new_mode, label, color, layout, cleared_cir_selected, cleared_viz_selected, updated_fig
+    return new_mode, label, color, layout, cleared_cir_selected, cleared_viz_selected
 
 # -----------------------------------------------------------------------------
-# React to viz-mode changes – clear selections & update scatterplot when turning
-# OFF, and ensure button label stays in sync after layout rebuilds.
+# React to viz-mode changes – clear selections when turning OFF
 # -----------------------------------------------------------------------------
 
 @callback(
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
-     Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+     Output('viz-selected-ids', 'data', allow_duplicate=True)],
     Input('viz-mode', 'data'),
     [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
      State('viz-selected-ids', 'data'),
@@ -1882,14 +1836,12 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
     prevent_initial_call=True
 )
 def handle_viz_mode_change(viz_mode, current_classnames, selected_ids, scatterplot_fig):
-    """When visualization mode is toggled OFF, clear selected ids, highlights,
-    and scatterplot traces. When toggled ON there is nothing to update here."""
-    from dash import no_update
+    """When visualization mode is toggled OFF, clear selected ids and highlights."""
     if viz_mode:
         # Turning ON – keep current selections/highlights
         raise PreventUpdate
 
-    # Turning OFF – remove visual-selected class and clear scatterplot trace
+    # Turning OFF – remove visual-selected class (scatterplot handled by unified controller)
     new_classnames = []
     for cls in current_classnames:
         parts = cls.split()
@@ -1897,12 +1849,7 @@ def handle_viz_mode_change(viz_mode, current_classnames, selected_ids, scatterpl
             parts.remove('visual-selected')
         new_classnames.append(' '.join(parts))
 
-    import copy
-    fig = copy.deepcopy(scatterplot_fig)
-    # Remove Selected Images trace(s)
-    fig['data'] = [tr for tr in fig['data'] if tr.get('name') not in ['Selected Images']]
-
-    return new_classnames, [], fig
+    return new_classnames, []
 
 # -----------------------------------------------------------------------------
 # Selection of images while Visualization mode is ON (multi-select capability)
@@ -1910,8 +1857,7 @@ def handle_viz_mode_change(viz_mode, current_classnames, selected_ids, scatterpl
 
 @callback(
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
-     Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+     Output('viz-selected-ids', 'data', allow_duplicate=True)],
     Input({'type': 'cir-result-card', 'index': ALL}, 'n_clicks'),
     [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
      State('viz-mode', 'data'),
@@ -1976,36 +1922,8 @@ def select_images_for_visualization(n_clicks_list, current_classnames, viz_mode,
             parts.remove('visual-selected')
         new_classnames.append(' '.join(parts))
 
-    # ---------------------------------------------------------------------
-    # Update scatterplot – remove previous Selected Images trace, then add
-    # new trace if there are selections.
-    # ---------------------------------------------------------------------
-    import copy
-    fig = copy.deepcopy(scatterplot_fig)
-    # Remove existing Selected Images trace(s)
-    fig['data'] = [tr for tr in fig['data'] if tr.get('name') != 'Selected Images']
-
-    if selected_ids:
-        main_trace = fig['data'][0]
-        xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
-        sel_x, sel_y = [], []
-        sel_set = set(selected_ids)
-        for xi, yi, cid in zip(xs, ys, cds):
-            if str(cid) in sel_set:
-                sel_x.append(xi)
-                sel_y.append(yi)
-
-        if sel_x:
-            sel_trace = go.Scatter(
-                x=sel_x,
-                y=sel_y,
-                mode='markers',
-                marker=dict(color=config.SELECTED_IMAGE_COLOR, size=9),
-                name='Selected Images'
-            )
-            fig['data'].append(sel_trace.to_plotly_json())
-
-    return new_classnames, selected_ids, fig
+    # Scatterplot updates now handled by unified controller
+    return new_classnames, selected_ids
 
 # -----------------------------------------------------------------------------
 # Clear selections when the global "Visualize CIR results" / "Hide CIR results"
@@ -2014,8 +1932,7 @@ def select_images_for_visualization(n_clicks_list, current_classnames, viz_mode,
 
 @callback(
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
-     Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+     Output('viz-selected-ids', 'data', allow_duplicate=True)],
     Input('cir-toggle-button', 'n_clicks'),
     [State('viz-mode', 'data'),
      State({'type': 'cir-result-card', 'index': ALL}, 'className'),
@@ -2051,17 +1968,8 @@ def clear_visual_selections_on_cir_toggle(n_clicks, viz_mode, current_classnames
             parts.remove('visual-selected')
         new_classnames.append(' '.join(parts))
 
-    # -------------------------------------------------------------
-    # Strip the "Selected Images" trace from the scatterplot figure
-    # -------------------------------------------------------------
-    if scatterplot_fig is None:
-        new_fig = no_update
-    else:
-        new_fig = copy.deepcopy(scatterplot_fig)
-        new_fig['data'] = [tr for tr in new_fig['data'] if tr.get('name') != 'Selected Images']
-
-    # Return cleared selections and updated figure
-    return new_classnames, [], new_fig
+    # Scatterplot updates now handled by unified controller
+    return new_classnames, []
 
 # -----------------------------------------------------------------------------
 # Loading visualisation for Prompt Enhancement

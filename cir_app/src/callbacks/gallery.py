@@ -5,8 +5,7 @@ from src.widgets import scatterplot
 import plotly.graph_objects as go
 
 @callback(
-    [Output('scatterplot', 'figure', allow_duplicate=True),
-     Output('selected-image-data', 'data'),
+    [Output('selected-image-data', 'data'),
      Output('selected-gallery-image-ids', 'data')],
     [State('scatterplot', 'figure'),
      State('selected-image-data', 'data'),
@@ -17,7 +16,7 @@ import plotly.graph_objects as go
 def gallery_image_is_clicked(scatterplot_fig, selected_image_data, current_selected_ids, n_clicks):
     """Handle gallery image clicks to support multi-selection and highlight on scatterplot"""
     if all(e is None for e in n_clicks):
-        return no_update, no_update, no_update
+        return no_update, no_update
 
     print('Gallery is clicked')
     triggered_id = dash.callback_context.triggered_id['index']
@@ -33,14 +32,11 @@ def gallery_image_is_clicked(scatterplot_fig, selected_image_data, current_selec
         print("Removing image from selection")
         new_selected_ids = [id for id in current_selected_ids if id != triggered_id]
         
-        # If no images left selected, clear everything
+        # Return updated selection data (scatterplot handled by unified controller)
         if not new_selected_ids:
-            _deselect_all_images(scatterplot_fig, selected_image_data)
-            return scatterplot_fig, None, []
+            return None, []
         else:
-            # Update selection with remaining images
-            _update_multi_selection(scatterplot_fig, new_selected_ids, selected_image_data)
-            return scatterplot_fig, selected_image_data, new_selected_ids
+            return selected_image_data, new_selected_ids
     
     try:
         # Parse the new string format
@@ -55,42 +51,28 @@ def gallery_image_is_clicked(scatterplot_fig, selected_image_data, current_selec
                 # Add to selection
                 new_selected_ids = current_selected_ids + [triggered_id]
                 
-                # Update scatterplot with multi-selection
-                _update_multi_selection(scatterplot_fig, new_selected_ids, selected_image_data)
-                
-                return scatterplot_fig, selected_image_data, new_selected_ids
+                # Return updated selection data (scatterplot handled by unified controller)
+                if not new_selected_ids:
+                    return None, []
+                else:
+                    return selected_image_data, new_selected_ids
             else:
                 raise ValueError(f"Invalid image identifier format: {triggered_id}")
         elif triggered_id.startswith("class_"):
             # Format: "class_{class_name}" (backwards compatibility)
-            class_name = triggered_id[6:]  # Remove "class_" prefix
-            print(f"Selected class: {class_name}")
-            scatterplot.highlight_class_on_scatterplot(scatterplot_fig, [class_name])
-            return scatterplot_fig, None, current_selected_ids
+            # Scatterplot highlighting handled by unified controller
+            return None, current_selected_ids
         else:
             # Legacy format: just the class name directly
-            class_name = triggered_id
-            print(f"Selected class (legacy): {class_name}")
-            scatterplot.highlight_class_on_scatterplot(scatterplot_fig, [class_name])
-            return scatterplot_fig, None, current_selected_ids
+            # Scatterplot highlighting handled by unified controller
+            return None, current_selected_ids
             
     except Exception as e:
         print(f"Error in gallery callback: {e}")
         import traceback
         traceback.print_exc()
-        # Fallback: try to extract class name and highlight just the class
-        if triggered_id.startswith("image_"):
-            parts = triggered_id.split("_", 2)
-            if len(parts) >= 3:
-                class_name = parts[2]
-                scatterplot.highlight_class_on_scatterplot(scatterplot_fig, [class_name])
-        elif triggered_id.startswith("class_"):
-            class_name = triggered_id[6:]
-            scatterplot.highlight_class_on_scatterplot(scatterplot_fig, [class_name])
-        else:
-            scatterplot.highlight_class_on_scatterplot(scatterplot_fig, [str(triggered_id)])
-    
-        return scatterplot_fig, no_update, current_selected_ids
+        # Fallback: scatterplot highlighting handled by unified controller
+        return no_update, current_selected_ids
 
 
 def _update_multi_selection(scatterplot_fig, selected_ids, selected_image_data):
