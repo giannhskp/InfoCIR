@@ -1730,3 +1730,52 @@ def clear_visual_selections_on_cir_toggle(n_clicks, viz_mode, current_classnames
 
     # Return cleared selections and updated figure
     return new_classnames, [], new_fig
+
+# -----------------------------------------------------------------------------
+# Loading visualisation for Prompt Enhancement
+# -----------------------------------------------------------------------------
+
+@callback(
+    Output('prompt-enhancement-content', 'children', allow_duplicate=True),
+    Input('enhance-prompt-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def show_prompt_enhancement_loading(n_clicks):
+    """Display a spinner + friendly message while prompt enhancement is running.
+
+    This callback fires immediately when the user clicks the *Enhance prompt*
+    button and renders a loading visual inside the **Prompt Enhancement** card.
+    Once the heavy `enhance_prompt` callback finishes, the regular
+    `populate_prompt_enhancement_tab` callback will overwrite this content with
+    the actual results, so we mark this output as *allow_duplicate=True*.
+    """
+    from dash.exceptions import PreventUpdate
+    if not n_clicks:
+        raise PreventUpdate
+
+    return html.Div([
+        dbc.Spinner(color="primary", type="grow", size="lg", spinnerClassName="mb-3"),
+        html.Span("Generating enhanced prompts…", className="text-muted fw-semibold")
+    ], className="d-flex flex-column align-items-center justify-content-center p-4")
+
+# -----------------------------------------------------------------------------
+# Loading visualisation for normal CIR search (Query Results component)
+# -----------------------------------------------------------------------------
+
+@callback(
+    Output('cir-results', 'children', allow_duplicate=True),
+    Input('cir-search-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def show_cir_search_loading(n_clicks):
+    """Display a spinner & message in the Query Results card while the CIR
+    search is running. It is intentionally lightweight and will be overwritten
+    by `perform_cir_search` once the results are ready."""
+    from dash.exceptions import PreventUpdate
+    if not n_clicks:
+        raise PreventUpdate
+
+    return html.Div([
+        dbc.Spinner(color="primary", type="border", size="lg", spinnerClassName="mb-3"),
+        html.Span("Retrieving images…", className="text-muted fw-semibold")
+    ], className="d-flex flex-column align-items-center justify-content-center p-4")
