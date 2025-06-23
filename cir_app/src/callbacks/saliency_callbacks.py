@@ -526,46 +526,73 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
 
     # Build Plotly bar chart
     fig = go.Figure(data=[
-        go.Bar(x=token_labels, y=attributions, marker=dict(color=attributions, colorscale='Reds'))
+        go.Bar(x=token_labels, y=attributions, marker=dict(color=attributions, colorscale='Reds'), width=0.6)
     ])
-    
-    # Calculate dynamic margins based on token lengths to prevent overlap
+
+    # Calculate dynamic layout based on token count and token lengths using formulas
+    num_tokens = len(token_labels)
     max_token_length = max(len(token) for token in token_labels) if token_labels else 0
     
-    # Adjust chart size and margins based on fullscreen mode and token lengths
+    # Original heights (don't change these)
     if token_attr_fullscreen:
         chart_height = 400
-        # Dynamic bottom margin: base margin + extra space for long tokens
         base_bottom_margin = 100
-        extra_margin = min(max_token_length * 3, 60)  # Cap extra margin at 60px
-        chart_margin = dict(l=30, r=30, t=50, b=base_bottom_margin + extra_margin)
-        title_font_size = 16
-        axis_font_size = 12
-        tick_angle = -45 if max_token_length <= 15 else -60  # Steeper angle for long tokens
+        base_font_size = 12
     else:
         chart_height = 130
-        # Dynamic bottom margin for compact mode
         base_bottom_margin = 50
-        extra_margin = min(max_token_length * 2, 40)  # Cap extra margin at 40px
-        chart_margin = dict(l=20, r=20, t=25, b=base_bottom_margin + extra_margin)
-        title_font_size = 11
-        axis_font_size = 9
-        tick_angle = -45 if max_token_length <= 12 else -60
+        base_font_size = 10
     
+    # Formula-based calculations
+    # Font size: gradually smaller as tokens increase, with minimum bounds
+    font_scale = max(0.6, 1 - (num_tokens - 10) * 0.02)  # 0.6 to 1.0 scale
+    tick_font_size = max(6, int(base_font_size * 0.8 * font_scale))
+    axis_font_size = max(8, int(base_font_size * font_scale))
+    title_font_size = max(10, int(base_font_size * 1.2 * font_scale))
+    
+    # Tick angle: more aggressive as tokens increase
+    tick_angle = -45 - min(30, num_tokens * 0.8)  # -45° to -75°
+    
+    # Bottom margin: account for longer tokens and steeper angles
+    angle_factor = abs(tick_angle) / 90.0  # 0.5 to 0.83
+    length_factor = min(max_token_length * 2, 40)
+    extra_margin = length_factor * angle_factor
+    
+    # Determine scrolling threshold (only for very long sequences)
+    needs_scrolling = num_tokens > 40
+    
+    chart_margin = dict(
+        l=30 if token_attr_fullscreen else 20,
+        r=30 if token_attr_fullscreen else 20, 
+        t=50 if token_attr_fullscreen else 25,
+        b=int(base_bottom_margin + extra_margin)
+    )
+
+    # Update layout with calculated values (original width behavior)
     fig.update_layout(
         height=chart_height,
         margin=chart_margin,
         xaxis_tickangle=tick_angle,
         xaxis_title="Tokens",
         yaxis_title="Attribution Score",
-        # title=title,
         title_font_size=title_font_size,
         xaxis_title_font_size=axis_font_size,
         yaxis_title_font_size=axis_font_size,
-        xaxis_title_standoff=20,  # Add standoff to prevent overlap
-        template='simple_white'
+        xaxis_title_standoff=20,
+        template='simple_white',
+        # Make bars narrower and reduce gaps
+        bargap=0.1,  # Small gap between bars (was default ~0.2)
+        xaxis=dict(
+            tickfont=dict(size=tick_font_size),
+            tickmode='linear',
+            dtick=1
+        ),
+        yaxis=dict(
+            tickfont=dict(size=tick_font_size)
+        )
     )
 
+    # Original graph creation (no width manipulation)
     graph = dcc.Graph(
         figure=fig, 
         config={'displayModeBar': False}, 
