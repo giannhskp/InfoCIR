@@ -521,7 +521,7 @@ def main():
     if len(Dataset.get()) != config.DATASET_SAMPLE_SIZE:
         print('Sample size changed in the configuration. Recalculating features.')
         Dataset.download()
-        Dataset.load()
+        Dataset.load(reload=True)
 
     print('Starting Dash application')
     run_ui()

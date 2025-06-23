@@ -24,6 +24,7 @@ from src.callbacks.saliency_callbacks import load_and_resize_image  # Reuse effi
 from dash import no_update
 import copy
 import math
+import numpy as np
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -80,6 +81,7 @@ def update_search_button_state(text_prompt, upload_contents):
      Output('cir-enhance-results', 'children', allow_duplicate=True),
      Output('cir-enhanced-prompts-data', 'data', allow_duplicate=True),
      Output('viz-mode', 'data', allow_duplicate=True),
+     Output('cir-selected-image-ids', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
      Output('saliency-data', 'data'),
      Output('wordcloud', 'list', allow_duplicate=True),
@@ -112,6 +114,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             [],                    # cir-enhance-results
             None,                  # cir-enhanced-prompts-data
             False,                 # viz-mode
+            [],                    # cir-selected-image-ids
             [],                    # viz-selected-ids
             None,                  # saliency-data
             [],                    # wordcloud
@@ -227,11 +230,12 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                         'height': '100%'
                     }
                 )
+                # Highlight if this image was already selected before rebuilding
                 card = html.Div(
                     inner_card,
                     id={'type': 'cir-result-card', 'index': img_name},
                     n_clicks=0,
-                    className='result-card-wrapper',
+                    className="result-card-wrapper",
                     style={'height': '100%'}
                 )
             if card_index == 0:
@@ -297,9 +301,16 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             from PIL import Image as PILImage
             query_img = PILImage.open(tmp.name).convert('RGB')
             query_input = cir_systems.cir_system_searle.preprocess(query_img).unsqueeze(0).to(device_model)
+            # ------------------------------------------------------------------
+            # Obtain CLIP image embedding **without** normalisation for φ.
+            # We keep a *separate* L2-normalised copy for downstream projection
+            # (UMAP) but pass the raw vector to the pseudo-token network, as
+            # required by SEARLE (normalising beforehand distorts the feature
+            # distribution that φ was trained on).
+            # ------------------------------------------------------------------
             with torch.no_grad():
-                img_feat = cir_systems.cir_system_searle.clip_model.encode_image(query_input)
-                img_feat = F.normalize(img_feat.float(), dim=-1)
+                img_feat_raw = cir_systems.cir_system_searle.clip_model.encode_image(query_input).float()
+                img_feat = F.normalize(img_feat_raw, dim=-1)
             feat_np = img_feat.cpu().numpy()
 
             # Compute final composed query embedding only for SEARLE models that have φ network
@@ -307,7 +318,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             if getattr(cir_systems.cir_system_searle, 'phi', None) is not None:
                 try:
                     with torch.no_grad():
-                        pseudo_tokens = cir_systems.cir_system_searle.phi(img_feat)
+                        pseudo_tokens = cir_systems.cir_system_searle.phi(img_feat_raw)
                         input_caption = f"a photo of $ that {text_prompt}"
                         tokenized_caption = clip.tokenize([input_caption], context_length=77).to(device_model)
                         from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
@@ -315,21 +326,84 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
                             cir_systems.cir_system_searle.clip_model,
                             tokenized_caption,
                             pseudo_tokens
-                        )
-                        final_q_feat = F.normalize(final_q_feat)
-                    final_query_feat_np = final_q_feat.cpu().numpy()
+                        ).float()
+                        # Normalise along the embedding dimension (-1)
+                        final_q_feat = F.normalize(final_q_feat, dim=-1)
+                        # Store as NumPy float32 to avoid dtype issues inside
+                        # scikit-learn transformers.
+                        final_query_feat_np = final_q_feat.cpu().numpy().astype(np.float32)
                 except Exception as e:
                     print(f"Warning: failed to compute final query features: {e}")
 
-            # UMAP transform
+            # ------------------------------------------------------------------
+            # Project Query (+ Final Query) to 2-D UMAP space using the same PCA
+            # preprocessing that was fitted during dataset projection.
+            # ------------------------------------------------------------------
+
             umap_path = config.WORK_DIR / 'umap_reducer.pkl'
+            pipeline_path = config.WORK_DIR / 'projection_pipeline.pkl'
+
+            def _apply_projection_pipeline(arr_np):
+                """Apply the saved pre-UMAP projection pipeline (style debias →
+                contrastive debias → alternative proj → final PCA) to *arr_np*
+                (shape: N×D).  If the pipeline file is missing we fall back to
+                the raw vectors so the app keeps working."""
+
+                if not os.path.exists(pipeline_path):
+                    return arr_np  # no pipeline – raw features
+
+                try:
+                    pipe = pickle.load(open(str(pipeline_path), 'rb'))
+
+                    x = arr_np.copy()
+
+                    # --- Style debiasing (scaler → PCA → semantic dims) ---
+                    if pipe.get('style_scaler') is not None:
+                        x = pipe['style_scaler'].transform(x)
+                        x = pipe['style_pca'].transform(x)
+                        x = x[:, pipe['style_dims']]
+
+                    # --- Contrastive debiasing (approximate: nearest prototype) ---
+                    if pipe.get('contrastive_scaler') is not None:
+                        x_scaled = pipe['contrastive_scaler'].transform(x)
+                        protos = pipe['contrastive_prototypes']
+                        weight = pipe['contrastive_weight']
+                        # Find nearest prototype in L2 sense
+                        dists = ((protos - x_scaled)**2).sum(axis=1)
+                        nearest_idx = int(dists.argmin())
+                        proto_vec = protos[nearest_idx]
+                        x_scaled = x_scaled + weight * (proto_vec - x_scaled)
+                        x = x_scaled  # remain in scaled space
+
+                    # --- Alternative projection ---
+                    if pipe.get('alt_scaler') is not None:
+                        x = pipe['alt_scaler'].transform(x)
+                        alt_model = pipe['alt_model']
+                        x = alt_model.transform(x)
+
+                    # --- Final PCA ---
+                    if pipe.get('final_pca') is not None:
+                        x = pipe['final_pca'].transform(x)
+
+                    return x
+                except Exception as e:
+                    print(f"Warning: failed to apply projection pipeline: {e}")
+                    return arr_np
+
             if os.path.exists(umap_path):
                 umap_reducer = pickle.load(open(str(umap_path), 'rb'))
-                umap_xy = umap_reducer.transform(feat_np)
+
+                # --- Query ---
+                proj_input = _apply_projection_pipeline(feat_np)
+                umap_xy = umap_reducer.transform(proj_input)
                 umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
+
+                # --- Final Query ---
                 if final_query_feat_np is not None:
-                    final_umap_xy = umap_reducer.transform(final_query_feat_np)
+                    proj_final = _apply_projection_pipeline(final_query_feat_np)
+                    final_umap_xy = umap_reducer.transform(proj_final)
                     umap_x_final_query, umap_y_final_query = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
+                    xfq, yfq = umap_x_final_query, umap_y_final_query
                 else:
                     umap_x_final_query = umap_y_final_query = None
             else:
@@ -390,10 +464,11 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'Hide CIR results',        # cir-toggle-button text (now ON)
             'warning',                 # cir-toggle-button color
             True,                      # cir-toggle-state – ON
-            {"display": "none"},     # cir-run-button style – remain hidden
+            {'display': 'none'},     # cir-run-button style – hidden
             [],                        # cir-enhance-results
             None,                      # cir-enhanced-prompts-data
             False,                     # viz-mode – OFF by default
+            [],                        # cir-selected-image-ids
             [],                        # viz-selected-ids
             saliency_summary,          # saliency-data
             wc,                        # wordcloud
@@ -414,10 +489,11 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'Visualize CIR results',     # button text
             'success',                   # button color
             False,                       # cir-toggle-state OFF
-            {"display": "none"},        # cir-run-button style – hidden
+            {'display': 'none'},        # cir-run-button style – hidden
             [],                          # cir-enhance-results
             None,                        # cir-enhanced-prompts-data
             False,                       # viz-mode
+            [],                          # cir-selected-image-ids
             [],                          # viz-selected-ids
             None,                        # saliency-data
             [],                          # wordcloud
@@ -453,14 +529,18 @@ def toggle_cir_visualization(n_clicks, current_state):
 @callback(
     [Output('enhance-prompt-button', 'disabled'),
      Output('enhance-prompt-button', 'color')],
-    Input({'type': 'cir-result-card', 'index': ALL}, 'className')
+    [Input({'type': 'cir-result-card', 'index': ALL}, 'className'),
+     Input('cir-selected-image-ids', 'data')]
 )
-def update_enhance_button_state(wrapper_classnames):
+def update_enhance_button_state(wrapper_classnames, selected_ids):
     """
     Enable the Enhance prompt button when a result is selected; otherwise keep it disabled.
     """
-    # If any wrapper has the 'selected' class, enable button
-    if any('selected' in cn for cn in wrapper_classnames):
+    # Check both className and selected_ids to handle clearing from mode toggle
+    has_selected_class = any('selected' in cn for cn in wrapper_classnames)
+    has_selected_ids = selected_ids and len(selected_ids) > 0
+    
+    if has_selected_class or has_selected_ids:
         return False, 'primary'
     return True, 'secondary'
 
@@ -486,12 +566,29 @@ def toggle_cir_result_selection(n_clicks_list, current_classnames, viz_mode, sel
     if not ctx.triggered:
         raise PreventUpdate
 
-    # Parse which card was clicked
+    # --------------------------------------------------------------
+    # Ignore the callback invocation that happens when the layout is
+    # first rendered. During that moment Dash sets n_clicks = 0 for
+    # every result card which would otherwise be interpreted here as
+    # a *click*. We only care about genuine user clicks where the
+    # clicked card's n_clicks > 0.
+    # --------------------------------------------------------------
     triggered_id_raw = ctx.triggered[0]['prop_id'].split('.')[0]
     try:
         trig_dict = json.loads(triggered_id_raw)
         clicked_idx = str(trig_dict.get('index'))
     except Exception:
+        raise PreventUpdate
+
+    # Find the n_clicks value corresponding to the triggered card
+    clicked_n_clicks = None
+    for inp_dict, n_val in zip(ctx.inputs_list[0], n_clicks_list):
+        if str(inp_dict['id']['index']) == clicked_idx:
+            clicked_n_clicks = n_val
+            break
+
+    if clicked_n_clicks is None or clicked_n_clicks == 0:
+        # Layout-initialisation trigger – ignore
         raise PreventUpdate
 
     # Ensure list initialised
@@ -535,6 +632,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     Enhance the user's prompt via a small LLM, compare each to the selected image, choose the best,
     rerun CIR with that prompt, and display diagnostics.
     """
+    print(f"Performing prompt enhancement for {len(selected_image_ids)} selected images")
+    print(f"Selected image IDs: {selected_image_ids}")
+    
     import os
     # Guard against missing data
     if not search_data or not selected_image_ids:
@@ -1070,8 +1170,12 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
 def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
     """Populate the prompt enhancement tab when new enhanced prompts are available"""
     if not enhanced_data:
-        # Clear prompt enhancement tab when starting a new CIR query or no enhancement data
-        return [], [], None
+        # Show informational message when no enhancement data is available
+        message_content = html.Div([
+            html.I(className="fas fa-info-circle text-muted me-2"),
+            html.Span("Run prompt enhancement to view enhanced prompts.", className="text-muted")
+        ], className="d-flex align-items-center justify-content-center p-4")
+        return message_content, [], None
     prompts = enhanced_data.get('prompts', [])
     coverages = enhanced_data.get('coverages', [])
     mean_ranks = enhanced_data.get('mean_ranks', [])
@@ -1307,6 +1411,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     # Determine axis and base query coords
     axis_title = scatterplot_fig['layout']['xaxis']['title']['text']
     xq = search_data.get('umap_x_query'); yq = search_data.get('umap_y_query')
+    xfq = yfq = None
     if axis_title != 'umap_x':
         xq = search_data.get('tsne_x_query'); yq = search_data.get('tsne_y_query')
     # Handle original revert
@@ -1342,25 +1447,93 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
         img = Image.open(tmp.name).convert('RGB')
         inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
         with torch.no_grad():
-            feat = cir_systems.cir_system_searle.clip_model.encode_image(inp)
-            feat = F.normalize(feat.float(), dim=-1)
+            # Compute raw CLIP image embedding – φ expects unnormalised input.
+            feat_raw = cir_systems.cir_system_searle.clip_model.encode_image(inp).float()
+            # Keep a normalised copy for distance-based projections (UMAP/t-SNE).
+            feat = F.normalize(feat_raw, dim=-1)
+            feat_np = feat.detach().cpu().numpy()
         if cir_systems.cir_system_searle.eval_type in ['phi','searle','searle-xl']:
-            pseudo = cir_systems.cir_system_searle.phi(feat)
+            pseudo = cir_systems.cir_system_searle.phi(feat_raw)
             sel_prompt = prompts[selected_idx]
             cap = f"a photo of $ that {sel_prompt}"
             tok = clip.tokenize([cap], context_length=77).to(device_model)
             from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
-            final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo)
-            final_feat = F.normalize(final_feat)
+            final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo).float()
+            final_feat = F.normalize(final_feat, dim=-1)
+            final_query_feat_np = final_feat.detach().cpu().numpy().astype(np.float32)
         else:
             final_feat = feat
+            final_query_feat_np = final_feat.detach().cpu().numpy()
         # Only compute Final Query coordinates for UMAP projection
         if axis_title == 'umap_x':
             umap_path = config.WORK_DIR / 'umap_reducer.pkl'
-            umap_reducer = pickle.load(open(str(umap_path),'rb'))
-            fnp = final_feat.detach().cpu().numpy()
-            fur = umap_reducer.transform(fnp)
-            xfq, yfq = float(fur[0][0]), float(fur[0][1])
+            pipeline_path = config.WORK_DIR / 'projection_pipeline.pkl'
+
+            def _apply_projection_pipeline(arr_np):
+                """Apply the saved pre-UMAP projection pipeline (style debias →
+                contrastive debias → alternative proj → final PCA) to *arr_np*
+                (shape: N×D).  If the pipeline file is missing we fall back to
+                the raw vectors so the app keeps working."""
+
+                if not os.path.exists(pipeline_path):
+                    return arr_np  # no pipeline – raw features
+
+                try:
+                    pipe = pickle.load(open(str(pipeline_path), 'rb'))
+
+                    x = arr_np.copy()
+
+                    # --- Style debiasing (scaler → PCA → semantic dims) ---
+                    if pipe.get('style_scaler') is not None:
+                        x = pipe['style_scaler'].transform(x)
+                        x = pipe['style_pca'].transform(x)
+                        x = x[:, pipe['style_dims']]
+
+                    # --- Contrastive debiasing (approximate: nearest prototype) ---
+                    if pipe.get('contrastive_scaler') is not None:
+                        x_scaled = pipe['contrastive_scaler'].transform(x)
+                        protos = pipe['contrastive_prototypes']
+                        weight = pipe['contrastive_weight']
+                        # Find nearest prototype in L2 sense
+                        dists = ((protos - x_scaled)**2).sum(axis=1)
+                        nearest_idx = int(dists.argmin())
+                        proto_vec = protos[nearest_idx]
+                        x_scaled = x_scaled + weight * (proto_vec - x_scaled)
+                        x = x_scaled  # remain in scaled space
+
+                    # --- Alternative projection ---
+                    if pipe.get('alt_scaler') is not None:
+                        x = pipe['alt_scaler'].transform(x)
+                        alt_model = pipe['alt_model']
+                        x = alt_model.transform(x)
+
+                    # --- Final PCA ---
+                    if pipe.get('final_pca') is not None:
+                        x = pipe['final_pca'].transform(x)
+
+                    return x
+                except Exception as e:
+                    print(f"Warning: failed to apply projection pipeline: {e}")
+                    return arr_np
+
+            if os.path.exists(umap_path):
+                umap_reducer = pickle.load(open(str(umap_path), 'rb'))
+
+                # --- Query ---
+                proj_input = _apply_projection_pipeline(feat_np)
+                umap_xy = umap_reducer.transform(proj_input)
+                umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
+
+                # --- Final Query ---
+                if final_query_feat_np is not None:
+                    proj_final = _apply_projection_pipeline(final_query_feat_np)
+                    final_umap_xy = umap_reducer.transform(proj_final)
+                    umap_x_final_query, umap_y_final_query = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
+                    xfq, yfq = umap_x_final_query, umap_y_final_query
+                else:
+                    umap_x_final_query = umap_y_final_query = None
+            else:
+                umap_x_query = umap_y_query = umap_x_final_query = umap_y_final_query = None
         else:
             xfq, yfq = None, None  # Final query only shown for UMAP
         os.unlink(tmp.name)
@@ -1373,8 +1546,9 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     main = scatterplot_fig['data'][0]
     xs, ys, cds = main['x'], main['y'], main['customdata']
     
-    # Reset main trace colors to remove any previous highlighting from selected images/classes
-    main['marker'] = {'color': config.SCATTERPLOT_COLOR}
+    # Reset main trace colours without touching other marker attrs (size, opacity…)
+    from src.widgets.scatterplot import _set_marker_colors as _set_marker_colors_helper
+    _set_marker_colors_helper(main, config.SCATTERPLOT_COLOR)
     # Plot Top-K and Top-1
     x1, y1, xk, yk = [], [], [], []
     cmp1 = int(top1_id) if top1_id is not None else None
@@ -1421,6 +1595,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     Output('cir-toggle-button', 'disabled', allow_duplicate=True),
     Output('cir-toggle-state', 'data', allow_duplicate=True),
     Output('viz-mode', 'data', allow_duplicate=True),
+    Output('cir-selected-image-ids', 'data', allow_duplicate=True),
     Output('viz-selected-ids', 'data', allow_duplicate=True),
     Output('cir-run-button', 'style', allow_duplicate=True),
     Input('custom-dropdown', 'value'),
@@ -1436,8 +1611,9 @@ def clear_results_on_model_change(_):
         True,   # keep disabled as there are no results
         False,  # Reset viz-mode toggle state
         False,  # Reset viz-mode to OFF
+        [],     # Clear cir-selected-image-ids
         [],     # Clear viz-selected-ids
-        {'display': 'none'}
+        {'display': 'none'},  # cir-run-button style – hidden
     )
 
 # -----------------------------------------------------------------------------
@@ -1447,7 +1623,7 @@ def clear_results_on_model_change(_):
 
 # Helper now also receives viz_mode so that the Visualize toggle button is rendered
 # with the correct ON/OFF label and color each time the Results layout is rebuilt.
-def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mode: bool = False):
+def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mode: bool = False, preselected_ids=None):
     """Return a Dash HTML div containing the grid of result cards.
 
     Parameters
@@ -1458,6 +1634,9 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
 
     df = Dataset.get()
     from src.callbacks.saliency_callbacks import load_and_resize_image  # local import
+
+    # Normalise *preselected_ids* to a set of strings for fast lookup
+    preselected_set = set(str(x) for x in (preselected_ids or []))
 
     cards = []
     for idx, (img_name, score) in enumerate(result_tuples):
@@ -1522,20 +1701,23 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
                 ], className="result-card-wrapper position-relative", style={"cursor": "default", "height": "100%"})
         else:
             inner = dbc.Card(card_body, className="result-card", style={"border": "1px solid #dee2e6", "borderRadius": "6px", "height": "100%"})
+            # Highlight if this image was previously selected
+            preselected = str(img_name) in preselected_set
+
             if clickable:
-                # Include ID & n_clicks so that selection callbacks work
+                # Interactive wrapper (used in prompt-enhancement mode)
                 wrapper = html.Div(
                     inner,
                     id={"type": "cir-result-card", "index": str(img_name)},
                     n_clicks=0,
-                    className="result-card-wrapper",
+                    className=f"result-card-wrapper{' selected' if preselected else ''}",
                     style={"height": "100%"},
                 )
             else:
-                # Non-interactive wrapper (no ID) for enhanced-prompt results
+                # Non-interactive wrapper for enhanced prompt results
                 wrapper = html.Div(
                     inner,
-                    className="result-card-wrapper",
+                    className=f"result-card-wrapper{' selected' if preselected else ''}",
                     style={"height": "100%"},
                 )
 
@@ -1570,10 +1752,11 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
      Output("enhance-prompt-button", "disabled", allow_duplicate=True),
      Output("enhance-prompt-button", "color", allow_duplicate=True)],
     Input("prompt-selection", "value"),
-    [State("cir-enhanced-prompts-data", "data"), State("cir-search-data", "data"), State("viz-mode", "data")],
+    [State("cir-enhanced-prompts-data", "data"), State("cir-search-data", "data"), State("viz-mode", "data"),
+     State('cir-selected-image-ids', 'data')],
     prevent_initial_call=True,
 )
-def update_query_results_for_prompt_selection(selected_idx, enhanced_data, search_data, viz_mode):
+def update_query_results_for_prompt_selection(selected_idx, enhanced_data, search_data, viz_mode, selected_ids):
     """Render top-k images of the selected enhanced prompt (or original query).
 
     • When *selected_idx* >= 0 we display the corresponding enhanced-prompt results
@@ -1602,7 +1785,9 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
         original_results = search_data.get("original_results")
         if not original_results:
             raise PreventUpdate
-        layout = _build_query_results_layout([(name, score) for name, score in original_results], clickable=True, viz_mode=viz_mode)
+        # Highlight previously selected ideal images when returning to baseline results
+        pre_ids = selected_ids if not viz_mode else None
+        layout = _build_query_results_layout([(name, score) for name, score in original_results], clickable=True, viz_mode=viz_mode, preselected_ids=pre_ids)
         # Do **not** change enhance-prompt button state here – let other callbacks
         # (image-selection) manage it. Hence we use no_update.
         from dash import no_update
@@ -1618,32 +1803,50 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
     [Output('viz-mode', 'data'),
      Output('visualize-toggle-button', 'children'),
      Output('visualize-toggle-button', 'color'),
-     Output('cir-results', 'children', allow_duplicate=True)],
+     Output('cir-results', 'children', allow_duplicate=True),
+     Output('cir-selected-image-ids', 'data', allow_duplicate=True),
+     Output('viz-selected-ids', 'data', allow_duplicate=True),
+     Output('scatterplot', 'figure', allow_duplicate=True)],
     Input('visualize-toggle-button', 'n_clicks'),
     [State('viz-mode', 'data'),
      State('prompt-selection', 'value'),
      State('cir-enhanced-prompts-data', 'data'),
-     State('cir-search-data', 'data')],
+     State('cir-search-data', 'data'),
+     State('scatterplot', 'figure')],
     prevent_initial_call=True
 )
-def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, search_data):
-    """Toggle visualization mode ON/OFF."""
+def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, search_data, scatterplot_fig):
+    """Toggle visualization mode ON/OFF and clear all selections when switching modes."""
     # Only toggle if we actually have a click (n_clicks > 0)
     if n_clicks is None or n_clicks == 0:
         # Initial state - keep current mode and set appropriate label
         label = 'Visualize ON' if current_mode else 'Visualize OFF'
         color = 'success' if current_mode else 'secondary'
         from dash import no_update
-        return current_mode, label, color, no_update
+        return current_mode, label, color, no_update, no_update, no_update, no_update
     
     # Toggle the mode
     new_mode = not current_mode
     label = 'Visualize ON' if new_mode else 'Visualize OFF'
     color = 'success' if new_mode else 'secondary'
 
+    # Clear all selections when switching modes
+    cleared_cir_selected = []
+    cleared_viz_selected = []
+
+    # Clear visualization traces from scatterplot when switching modes
+    import copy
+    if scatterplot_fig is not None:
+        updated_fig = copy.deepcopy(scatterplot_fig)
+        # Remove Selected Images trace when switching modes
+        updated_fig['data'] = [tr for tr in updated_fig['data'] if tr.get('name') != 'Selected Images']
+    else:
+        from dash import no_update
+        updated_fig = no_update
+
     # Rebuild Query Results layout with new viz_mode state
     if search_data is None:
-        return new_mode, label, color, no_update
+        return new_mode, label, color, no_update, cleared_cir_selected, cleared_viz_selected, updated_fig
 
     # Determine which results to show (baseline or selected enhanced prompt)
     if selected_idx is not None and selected_idx >= 0 and enhanced_data is not None:
@@ -1661,7 +1864,7 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
         else:
             layout = no_update
 
-    return new_mode, label, color, layout
+    return new_mode, label, color, layout, cleared_cir_selected, cleared_viz_selected, updated_fig
 
 # -----------------------------------------------------------------------------
 # React to viz-mode changes – clear selections & update scatterplot when turning
@@ -1730,13 +1933,23 @@ def select_images_for_visualization(n_clicks_list, current_classnames, viz_mode,
     if not ctx.triggered:
         raise PreventUpdate
 
-    # Determine which card triggered the callback
+    # Ignore automatic callbacks during initial layout build (n_clicks == 0)
     triggered_id_raw = ctx.triggered[0]['prop_id'].split('.')[0]
     try:
         trig_dict = json.loads(triggered_id_raw)
         clicked_id = str(trig_dict.get('index'))
     except Exception:
-        # Should not happen
+        raise PreventUpdate
+
+    # Determine n_clicks value for the triggered card
+    clicked_n = None
+    for inp_dict, n_val in zip(ctx.inputs_list[0], n_clicks_list):
+        if str(inp_dict['id']['index']) == clicked_id:
+            clicked_n = n_val
+            break
+
+    if clicked_n is None or clicked_n == 0:
+        # Spurious callback during layout creation – ignore
         raise PreventUpdate
 
     # Initialize list

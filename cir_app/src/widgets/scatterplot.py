@@ -5,6 +5,26 @@ from src.Dataset import Dataset
 from src import config
 import plotly.graph_objects as go
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _set_marker_colors(trace, colors):
+    """Update only the colour of the existing marker dict while preserving
+    all other styling attributes such as *size*, *opacity*, *symbol*, etc.
+
+    Args:
+        trace (dict): A Plotly trace (typically scatter) in JSON format.
+        colors: Either a single colour or an arraylike of colours with the
+                 same length as the trace data points.
+    """
+
+    # Plotly may return the marker as a *go.scatter.marker* object or as a
+    # plain dict.  In both cases ``trace['marker']`` behaves like a mapping.
+    marker = dict(trace.get('marker', {}))  # copy to avoid mutating in place
+    marker['color'] = colors
+    trace['marker'] = marker
+
 def highlight_class_on_scatterplot(scatterplot, class_names):
     """
     Highlight specific classes on the scatterplot.
@@ -19,7 +39,7 @@ def highlight_class_on_scatterplot(scatterplot, class_names):
         )
     else:
         colors = config.SCATTERPLOT_COLOR
-    scatterplot['data'][0]['marker'] = {'color': colors}
+    _set_marker_colors(scatterplot['data'][0], colors)
 
     # Update legend for selected class based on whether any class is highlighted
     _update_legend_for_selected_class(
@@ -57,7 +77,7 @@ def highlight_selected_image_and_class(scatterplot, selected_image_id, class_nam
                 return config.SCATTERPLOT_COLOR  # Default for others
         
         colors = df.apply(get_color, axis=1)
-        scatterplot['data'][0]['marker'] = {'color': colors}
+        _set_marker_colors(scatterplot['data'][0], colors)
     
     # Update legend traces: first selected image, then (optionally) selected class
     _update_legend_for_selected_image(scatterplot)
@@ -137,7 +157,7 @@ def _handle_cir_image_selection(scatterplot, selected_image_id, class_names):
             return config.SCATTERPLOT_COLOR  # Default for others
     
     colors = df.apply(get_color, axis=1)
-    scatterplot['data'][0]['marker'] = {'color': colors}
+    _set_marker_colors(scatterplot['data'][0], colors)
 
 def _update_legend_for_selected_image(scatterplot):
     """Update legend to include selected image color when an image is selected."""
@@ -278,7 +298,7 @@ def create_scatterplot_figure(projection):
         showlegend=False,
         marker=dict(
             color=config.SCATTERPLOT_COLOR,
-            size=7,
+            size=2,
             opacity=0.6,
             symbol='circle'
         ),
@@ -337,5 +357,14 @@ def get_data_selected_on_scatterplot(scatterplot_fig):
         data_selected = Dataset.get().loc[selected_image_ids]
     else:
         data_selected = Dataset.get()
+
+    # --------------------------------------------------------------
+    # Skip adding thumbnail overlays when CIR visualisation markers
+    # are present.  Otherwise the images cover the coloured Top-K /
+    # Top-1 / Query markers a moment after they are drawn.
+    # --------------------------------------------------------------
+    if any(tr.get('name') in ['Top-K', 'Top-1', 'Query', 'Final Query']
+           for tr in scatterplot_fig.get('data', [])):
+        return data_selected
 
     return data_selected 

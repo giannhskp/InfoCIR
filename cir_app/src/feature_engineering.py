@@ -207,8 +207,22 @@ def embed_images_enhanced(paths, device, clip_model_name=None, clip_layer=-1,
     return np.concatenate(embeddings, axis=0)
 
 
-def apply_style_debiasing(embeddings, labels):
-    """Apply style debiasing techniques to focus on semantic content."""
+def apply_style_debiasing(embeddings, labels, *, return_transform: bool = False):
+    """Apply the style-debiasing procedure (scaling → PCA → semantic-dimension
+    selection).
+
+    Parameters
+    ----------
+    embeddings : np.ndarray
+        Matrix of CLIP (or previous-stage) embeddings of shape (N, D).
+    labels : list[str] | np.ndarray
+        Class labels (length N) – used to pick the semantic dimensions.
+    return_transform : bool, default = False
+        When *True* the function returns a 4-tuple *(embeddings_sd, scaler,
+        pca, semantic_dims)* so that the exact same mapping can be applied to
+        new query vectors at inference time.  When *False* (default) behaves
+        exactly like before and returns only the transformed embeddings.
+    """
     # Method 1: Remove the most style-correlated principal components
     scaler = StandardScaler()
     embeddings_scaled = scaler.fit_transform(embeddings)
@@ -251,13 +265,17 @@ def apply_style_debiasing(embeddings, labels):
     n_keep = int(0.5 * len(variance_ratios))
     semantic_dims = np.argsort(variance_ratios)[-n_keep:]
     
-    return pca_embeddings[:, semantic_dims]
+    embeddings_sd = pca_embeddings[:, semantic_dims]
+
+    if return_transform:
+        return embeddings_sd, scaler, pca, semantic_dims
+    return embeddings_sd
 
 
-def apply_alternative_projection(embeddings, method):
+def apply_alternative_projection(embeddings, method, *, return_transform: bool = False):
     """Apply alternative dimensionality reduction techniques."""
     if method == "none":
-        return embeddings
+        return (embeddings, None, None) if return_transform else embeddings
     
     scaler = StandardScaler()
     embeddings_scaled = scaler.fit_transform(embeddings)
@@ -265,17 +283,20 @@ def apply_alternative_projection(embeddings, method):
     if method == "pca_then_umap":
         # First apply PCA to reduce noise, then UMAP in a subsequent step
         pca = PCA(n_components=min(200, embeddings.shape[1]))
-        return pca.fit_transform(embeddings_scaled)
+        proj = pca.fit_transform(embeddings_scaled)
+        return (proj, scaler, pca) if return_transform else proj
     
     elif method == "ica":
         # Independent Component Analysis to separate style and content
         ica = FastICA(n_components=min(200, embeddings.shape[1]), random_state=42)
-        return ica.fit_transform(embeddings_scaled)
-    
-    return embeddings_scaled
+        proj = ica.fit_transform(embeddings_scaled)
+        return (proj, scaler, ica) if return_transform else proj
+
+    # Fallback (should not reach here)
+    return (embeddings_scaled, scaler, None) if return_transform else embeddings_scaled
 
 
-def apply_contrastive_debiasing(embeddings, labels, contrastive_weight=0.1):
+def apply_contrastive_debiasing(embeddings, labels, contrastive_weight=0.1, *, return_transform: bool = False):
     """
     Apply contrastive debiasing to reduce style bias.
     
@@ -315,7 +336,11 @@ def apply_contrastive_debiasing(embeddings, labels, contrastive_weight=0.1):
         debiased = embedding + contrastive_weight * (prototype - embedding)
         debiased_embeddings.append(debiased)
     
-    return np.array(debiased_embeddings)
+    debiased_arr = np.array(debiased_embeddings)
+
+    if return_transform:
+        return debiased_arr, scaler, class_prototypes, contrastive_weight
+    return debiased_arr
 
 
 def check_for_nans(data, name):
@@ -334,36 +359,66 @@ def calculate_umap_enhanced(clip_embeddings, labels, umap_config):
     print("=== NEW ENHANCED UMAP CALCULATION ===", flush=True)
     print("Applying enhanced UMAP with debiasing techniques...", flush=True)
     
-    # Apply style debiasing if enabled
+    # ------------------------------------------------------------------
+    # Fit the *same* transformation chain that will later be applied to
+    # novel query vectors at runtime.  We collect the fitted pieces in
+    # *projection_pipeline* so that the Dash app can load & reuse them.
+    # ------------------------------------------------------------------
+
+    projection_pipeline = {}
+
     if umap_config.get('style_debiasing', False):
         print("Applying style debiasing techniques...", flush=True)
-        clip_embeddings = apply_style_debiasing(clip_embeddings, labels)
+        clip_embeddings, style_scaler, style_pca, semantic_dims = apply_style_debiasing(
+            clip_embeddings, labels, return_transform=True)
+        projection_pipeline.update({
+            'style_scaler': style_scaler,
+            'style_pca': style_pca,
+            'style_dims': semantic_dims
+        })
         print(f"\u2713 Style debiasing applied. New shape: {clip_embeddings.shape}", flush=True)
     
     # Apply contrastive debiasing if enabled
     if umap_config.get('contrastive_debiasing', False):
         contrastive_weight = umap_config.get('contrastive_weight', 0.1)
         print(f"Applying contrastive debiasing with weight={contrastive_weight}...", flush=True)
-        clip_embeddings = apply_contrastive_debiasing(clip_embeddings, labels, contrastive_weight)
+        clip_embeddings, ctr_scaler, prototypes, c_weight = apply_contrastive_debiasing(
+            clip_embeddings, labels, contrastive_weight, return_transform=True)
+        projection_pipeline.update({
+            'contrastive_scaler': ctr_scaler,
+            'contrastive_prototypes': prototypes,
+            'contrastive_weight': c_weight
+        })
         print(f"\u2713 Contrastive debiasing applied. New shape: {clip_embeddings.shape}", flush=True)
     
     # Apply alternative projection if specified
     alt_projection = umap_config.get('alternative_projection', 'none')
     if alt_projection != 'none':
         print(f"Applying alternative projection: {alt_projection}", flush=True)
-        clip_embeddings = apply_alternative_projection(clip_embeddings, alt_projection)
+        clip_embeddings, alt_scaler, alt_model = apply_alternative_projection(
+            clip_embeddings, alt_projection, return_transform=True)
+        projection_pipeline.update({
+            'alt_scaler': alt_scaler,
+            'alt_model': alt_model
+        })
         print(f"\u2713 Alternative projection applied. New shape: {clip_embeddings.shape}", flush=True)
     
-    # PCA preprocessing
+    # ------------------------------------------------------------------
+    # Fit the *same* transformation chain that will later be applied to
+    # novel query vectors at runtime.  We collect the fitted pieces in
+    # *projection_pipeline* so that the Dash app can load & reuse them.
+    # ------------------------------------------------------------------
+
     pca_components = umap_config.get('pca_components', 100)
-    if pca_components and pca_components < clip_embeddings.shape[1]:
-        print(f"Running PCA → {pca_components} components...", flush=True)
-        embeddings_pca = PCA(n_components=pca_components).fit_transform(clip_embeddings)
-        check_for_nans(embeddings_pca, "PCA embeddings")
-        print("\u2713 PCA embeddings verified: no NaN values found", flush=True)
-    else:
-        embeddings_pca = clip_embeddings
-    
+    pca = PCA(n_components=min(pca_components, clip_embeddings.shape[1]))
+    embeddings_pca = pca.fit_transform(clip_embeddings)
+    check_for_nans(embeddings_pca, "PCA embeddings")
+
+    # -----------------------------------------------------------
+    # Save the final PCA into the projection pipeline dictionary
+    # -----------------------------------------------------------
+    projection_pipeline['final_pca'] = pca
+
     # Create label to integer mapping for supervised UMAP
     unique_labels = sorted(list(set(labels)))
     label_to_int = {label: idx for idx, label in enumerate(unique_labels)}
@@ -453,6 +508,31 @@ def calculate_umap_enhanced(clip_embeddings, labels, umap_config):
         with open(metrics_path, 'w') as f:
             json.dump(metrics, f, indent=2)
         print(f"✓ Quality metrics saved to {metrics_path}", flush=True)
+    
+    # ------------------------------------------------------------------
+    # Persist the UMAP reducer *and* the full pre-UMAP projection pipeline so
+    # that the Dash callbacks can reproduce the exact mapping.  We store the
+    # reducer right here as well (even though `generate_projection_data()`
+    # will save it again) so that intermediate runs of this function alone
+    # also leave a usable artefact on disk.
+    # ------------------------------------------------------------------
+
+    umap_model_path = config.WORK_DIR / 'umap_reducer.pkl'
+    try:
+        with open(str(umap_model_path), 'wb') as f:
+            pickle.dump(reducer, f)
+        print(f'UMAP reducer saved to {umap_model_path}', flush=True)
+    except Exception as e:
+        print(f"Warning: could not save UMAP reducer: {e}", flush=True)
+    
+    # Save complete projection pipeline (excluding UMAP)
+    pipeline_path = config.WORK_DIR / 'projection_pipeline.pkl'
+    try:
+        with open(str(pipeline_path), 'wb') as f:
+            pickle.dump(projection_pipeline, f)
+        print(f'Projection pipeline saved to {pipeline_path}')
+    except Exception as e:
+        print(f"Warning: failed to save projection pipeline: {e}")
     
     return projection[:, 0], projection[:, 1], reducer
 
