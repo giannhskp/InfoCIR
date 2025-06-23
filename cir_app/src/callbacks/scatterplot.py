@@ -343,7 +343,7 @@ def unified_scatterplot_controller(
             if search_data:
                 topk_ids = search_data.get('topk_ids', [])
                 top1_id = search_data.get('top1_id', None)
-        elif prompt_selection >= 0:
+        elif prompt_selection is not None and prompt_selection >= 0:
             # Show enhanced prompt results
             results_lists = enhanced_prompts_data.get('all_results', [])
             if prompt_selection < len(results_lists):
