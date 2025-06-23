@@ -16,11 +16,12 @@ import plotly.graph_objects as go
         Input('cir-toggle-state', 'data'),
         Input('scatterplot', 'selectedData'),
         Input('scatterplot', 'relayoutData'),
+        Input('scatterplot', 'clickData'),
         Input('projection-radio-buttons', 'value'),
         Input('deselect-button', 'n_clicks'),
         Input({'type': 'gallery-card', 'index': ALL}, 'n_clicks'),
         Input('wordcloud', 'click'),
-        Input('histogram', 'clickData'),
+        Input('selected-scatterplot-class', 'data'),
         Input('prompt-selection', 'value'),
         Input('viz-mode', 'data'),
         Input('viz-selected-ids', 'data'),
@@ -37,8 +38,8 @@ import plotly.graph_objects as go
     prevent_initial_call=True,
 )
 def unified_scatterplot_controller(
-    cir_toggle_state, selectedData, relayoutData, projection_value, deselect_clicks,
-    gallery_clicks, wordcloud_click, histogram_click, prompt_selection, viz_mode, viz_selected_ids,
+    cir_toggle_state, selectedData, relayoutData, clickData, projection_value, deselect_clicks,
+    gallery_clicks, wordcloud_click, selected_scatterplot_class, prompt_selection, viz_mode, viz_selected_ids,
     scatterplot_fig, search_data, selected_gallery_image_ids, selected_image_data, 
     enhanced_prompts_data, selected_histogram_class
 ):
@@ -97,8 +98,21 @@ def unified_scatterplot_controller(
         from src.widgets.scatterplot import _set_marker_colors
         _set_marker_colors(new_fig['data'][0], config.SCATTERPLOT_COLOR)
         
-        # Also clear class highlighting legend
-        scatterplot.highlight_class_on_scatterplot(new_fig, None)
+        # Clear class highlighting legend - remove selected class trace only, don't add legend
+        new_fig['data'] = [trace for trace in new_fig['data'] if trace.get('name') != 'selected class']
+        
+        # Ensure we have exactly one "image embedding" legend trace
+        # Only count traces that actually appear in legend (not the main data trace)
+        legend_traces = [trace for i, trace in enumerate(new_fig['data']) 
+                        if i > 0 and trace.get('name') == 'image embedding']
+        has_legend = len(legend_traces) > 0
+        if not has_legend:
+            # Add legend trace if missing
+            legend_trace = go.Scatter(
+                x=[None], y=[None], mode="markers", name='image embedding',
+                marker=dict(size=7, color="blue", symbol='circle')
+            )
+            new_fig['data'].append(legend_trace.to_plotly_json())
             
         return new_fig
     
@@ -124,14 +138,15 @@ def unified_scatterplot_controller(
             preserved_traces = []
             has_legend = False
             
-            for trace in new_fig['data']:
+            for i, trace in enumerate(new_fig['data']):
                 trace_name = trace.get('name', '')
                 if trace_name not in ['Top-K', 'Top-1', 'Query', 'Final Query']:
                     preserved_traces.append(trace)
-                    if trace_name == 'image embedding' and trace.get('showlegend', False):
+                    # Only count legend traces, not the main data trace (index 0)
+                    if trace_name == 'image embedding' and i > 0:
                         has_legend = True
             
-            # Ensure we have the legend trace
+            # Ensure we have exactly one legend trace
             if not has_legend:
                 legend_trace = go.Scatter(
                     x=[None], y=[None], mode="markers", name='image embedding',
@@ -306,18 +321,48 @@ def unified_scatterplot_controller(
         return new_fig
     
     # -------------------------------------------------------------------------
-    # 8. HISTOGRAM CLICKS - Handle class highlighting from histogram
+    # 8. CLASS SELECTION CHANGES - Handle scatterplot highlighting when class selection changes
     # -------------------------------------------------------------------------
-    elif trigger_id == 'histogram' and histogram_click:
-        print("Handling histogram click")
+    elif trigger_id == 'selected-scatterplot-class':
+        print(f"Handling class selection change: {selected_scatterplot_class}")
         import copy
         new_fig = copy.deepcopy(scatterplot_fig)
         
-        # Extract class name from histogram click and highlight
-        if 'points' in histogram_click and histogram_click['points']:
-            class_name = histogram_click['points'][0].get('x')
-            if class_name:
-                scatterplot.highlight_class_on_scatterplot(new_fig, [class_name])
+        # When CIR is active, be careful not to interfere with CIR traces
+        if cir_toggle_state:
+            print("DEBUG: Class selection while CIR is active - preserving CIR traces")
+            # Only update main trace colors, preserve all CIR traces
+            if selected_scatterplot_class is None:
+                # Deselect - clear class highlighting but preserve CIR traces
+                from src.widgets.scatterplot import _set_marker_colors
+                _set_marker_colors(new_fig['data'][0], config.SCATTERPLOT_COLOR)
+            else:
+                # Select - highlight this class but preserve CIR traces
+                df = Dataset.get()
+                colors = df['class_name'].map(
+                    lambda x: config.SCATTERPLOT_SELECTED_COLOR if x == selected_scatterplot_class else config.SCATTERPLOT_COLOR
+                )
+                from src.widgets.scatterplot import _set_marker_colors
+                _set_marker_colors(new_fig['data'][0], colors)
+            
+            # Update legend for selected class (preserve CIR traces in legend)
+            from src.widgets.scatterplot import _update_legend_for_selected_class
+            _update_legend_for_selected_class(
+                new_fig,
+                class_highlighted=bool(selected_scatterplot_class),
+                color=config.SCATTERPLOT_SELECTED_COLOR,
+            )
+        else:
+            # Normal mode - no CIR traces to preserve
+            if selected_scatterplot_class is None:
+                # Deselect - clear all class highlighting
+                from src.widgets.scatterplot import _set_marker_colors
+                _set_marker_colors(new_fig['data'][0], config.SCATTERPLOT_COLOR)
+                # Also clear class highlighting legend
+                scatterplot.highlight_class_on_scatterplot(new_fig, None)
+            else:
+                # Select - highlight this class
+                scatterplot.highlight_class_on_scatterplot(new_fig, [selected_scatterplot_class])
         
         return new_fig
     
@@ -637,4 +682,95 @@ def update_widgets_from_selection(selectedData, cir_toggle_state, scatterplot_fi
     
     histogram_fig = histogram.draw_histogram(data_sel)
     
-    return gallery_children, wordcloud_data, histogram_fig, None, [] 
+    return gallery_children, wordcloud_data, histogram_fig, None, []
+
+
+# ---------------------------------------------------------------------------
+# CLASS SELECTION MANAGEMENT - Handle selected class state and histogram highlighting
+# ---------------------------------------------------------------------------
+
+@callback(
+    [Output('selected-scatterplot-class', 'data'),
+     Output('histogram', 'figure', allow_duplicate=True)],
+    [Input('scatterplot', 'clickData'),
+     Input('histogram', 'clickData')],
+    [State('selected-scatterplot-class', 'data'),
+     State('scatterplot', 'figure'),
+     State('cir-toggle-state', 'data'),
+     State('cir-search-data', 'data')],
+    prevent_initial_call=True,
+)
+def manage_class_selection_and_histogram_highlighting(scatterplot_click, histogram_click, 
+                                                      current_selected_class, scatterplot_fig, 
+                                                      cir_toggle_state, search_data):
+    """Manage class selection state and update histogram highlighting accordingly"""
+    
+    ctx = callback_context
+    if not ctx.triggered:
+        return dash.no_update, dash.no_update
+    
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    new_selected_class = current_selected_class
+    
+    # Handle different triggers (excluding deselect-button which is handled by deselect_button_is_pressed)
+    if trigger_id == 'scatterplot' and scatterplot_click:
+        # Handle scatterplot click
+        if 'points' in scatterplot_click and scatterplot_click['points']:
+            clicked_point = scatterplot_click['points'][0]
+            if 'customdata' in clicked_point:
+                clicked_image_id = clicked_point['customdata']
+                df = Dataset.get()
+                if clicked_image_id in df.index:
+                    clicked_class = df.loc[clicked_image_id]['class_name']
+                    
+                    # Toggle selection
+                    if current_selected_class == clicked_class:
+                        new_selected_class = None  # Deselect
+                    else:
+                        new_selected_class = clicked_class  # Select
+                        
+    elif trigger_id == 'histogram' and histogram_click:
+        # Handle histogram click
+        if 'points' in histogram_click and histogram_click['points']:
+            # Extract the full class name from customdata instead of the truncated x value
+            # customdata[0] contains the full class name, while x contains the truncated display name
+            point = histogram_click['points'][0]
+            if 'customdata' in point and point['customdata']:
+                clicked_class = point['customdata'][0]
+                if clicked_class:
+                    # Toggle selection
+                    if current_selected_class == clicked_class:
+                        new_selected_class = None  # Deselect
+                    else:
+                        new_selected_class = clicked_class  # Select
+    
+    # Build appropriate histogram based on current state
+    from src.widgets import histogram as histogram_widget
+    
+    # Priority: Scatterplot selection > CIR results > Full dataset
+    if scatterplot_fig and scatterplot_fig['data']:
+        main_trace = scatterplot_fig['data'][0]
+        if 'selectedpoints' in main_trace and main_trace['selectedpoints'] and len(main_trace['selectedpoints']) > 0:
+            # There's an active scatterplot selection - use it for histogram data (highest priority)
+            from src.widgets.scatterplot import get_data_selected_on_scatterplot
+            selected_data = get_data_selected_on_scatterplot(scatterplot_fig)
+            highlight_classes = [new_selected_class] if new_selected_class else None
+            histogram_fig = histogram_widget.draw_histogram(selected_data, highlight_classes)
+        elif cir_toggle_state and search_data:
+            # No scatterplot selection but CIR is active - show CIR results with class highlighting
+            df = Dataset.get()
+            topk_ids = search_data.get('topk_ids', [])
+            cir_df = df.loc[topk_ids]
+            highlight_classes = [new_selected_class] if new_selected_class else None
+            histogram_fig = histogram_widget.draw_histogram(cir_df, highlight_classes)
+        else:
+            # No scatterplot selection and no CIR - show full dataset with class highlighting
+            full_data = Dataset.get()
+            highlight_classes = [new_selected_class] if new_selected_class else None
+            histogram_fig = histogram_widget.draw_histogram(full_data, highlight_classes)
+    else:
+        # Fallback
+        histogram_fig = histogram_widget.draw_histogram(None)
+    
+    return new_selected_class, histogram_fig 

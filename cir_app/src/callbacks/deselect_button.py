@@ -9,7 +9,8 @@ from src.widgets import scatterplot
      Output('cir-toggle-state', 'data', allow_duplicate=True),
      Output('prompt-selection', 'value', allow_duplicate=True),
      Output('histogram', 'figure', allow_duplicate=True),
-     Output('selected-histogram-class', 'data', allow_duplicate=True)],
+     Output('selected-histogram-class', 'data', allow_duplicate=True),
+     Output('selected-scatterplot-class', 'data', allow_duplicate=True)],
     [State('projection-radio-buttons', 'value'),
      State('scatterplot', 'figure'),
      State('cir-toggle-state', 'data')],
@@ -45,4 +46,4 @@ def deselect_button_is_pressed(projection_selected, scatterplot_fig, cir_toggle_
     from src.widgets import histogram as histogram_widget
     histogram_fig = histogram_widget.draw_histogram(None)
 
-    return [], cir_button_text, cir_button_color, new_cir_toggle_state, -1, histogram_fig, None 
+    return [], cir_button_text, cir_button_color, new_cir_toggle_state, -1, histogram_fig, None, None 

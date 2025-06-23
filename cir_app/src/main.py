@@ -475,6 +475,8 @@ def run_ui():
             dcc.Store(id='saliency-current-index', data=0),
             # Store for class selected in histogram (None when nothing is selected)
             dcc.Store(id='selected-histogram-class', data=None),
+            # Store for class selected in scatterplot (None when nothing is selected)
+            dcc.Store(id='selected-scatterplot-class', data=None),
             # Store for Query Results fullscreen state
             dcc.Store(id='cir-results-fullscreen', data=False),
             # Store for Histogram/Wordcloud fullscreen state

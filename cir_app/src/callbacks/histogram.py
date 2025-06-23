@@ -13,6 +13,9 @@ def histogram_is_clicked(histogram_click):
         return None
 
     print('Histogram is clicked')
-    clicked_class = histogram_click['points'][0]['x']
+    # Extract the full class name from customdata instead of the truncated x value
+    # customdata[0] contains the full class name, while x contains the truncated display name
+    clicked_class = histogram_click['points'][0]['customdata'][0]
+    print(f'Clicked class: {clicked_class}')
     # Scatterplot highlighting handled by unified controller
     return clicked_class 

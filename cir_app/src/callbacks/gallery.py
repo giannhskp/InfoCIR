@@ -252,19 +252,27 @@ def _update_legend_for_multi_selection(scatterplot_fig):
     if selected_images_trace:
         scatterplot_fig['data'].append(selected_images_trace)
     
-    # Add legend traces
-    scatterplot_fig['data'].append(
-        go.Scatter(
-            x=[None], y=[None], mode="markers", name='image embedding',
-            marker=dict(size=7, color="blue", symbol='circle'),
-        ).to_plotly_json()
-    )
-    scatterplot_fig['data'].append(
-        go.Scatter(
-            x=[None], y=[None], mode="markers", name='selected class',
-            marker=dict(size=7, color=config.SELECTED_CLASS_COLOR, symbol='circle'),
-        ).to_plotly_json()
-    )
+    # Add legend traces only if they don't exist
+    # Only count legend traces, not the main data trace (index 0)
+    has_embedding_legend = any(i > 0 and trace.get('name') == 'image embedding' 
+                              for i, trace in enumerate(scatterplot_fig['data']))
+    has_class_legend = any(trace.get('name') == 'selected class' 
+                          for trace in scatterplot_fig['data'])
+    
+    if not has_embedding_legend:
+        scatterplot_fig['data'].append(
+            go.Scatter(
+                x=[None], y=[None], mode="markers", name='image embedding',
+                marker=dict(size=7, color="blue", symbol='circle'),
+            ).to_plotly_json()
+        )
+    if not has_class_legend:
+        scatterplot_fig['data'].append(
+            go.Scatter(
+                x=[None], y=[None], mode="markers", name='selected class',
+                marker=dict(size=7, color=config.SELECTED_CLASS_COLOR, symbol='circle'),
+            ).to_plotly_json()
+        )
     
     # Only add "Selected Images" legend if there's no actual trace
     if not selected_images_trace:
@@ -331,16 +339,20 @@ def _update_legend_for_deselection(scatterplot_fig):
     # Keep only the main data trace and CIR traces
     scatterplot_fig['data'] = scatterplot_fig['data'][:1] + cir_traces
     
-    # Add basic legend trace for image embeddings
-    scatterplot_fig['data'].append(
-        go.Scatter(
-            x=[None],
-            y=[None],
-            mode="markers",
-            name='image embedding',
-            marker=dict(size=7, color="blue", symbol='circle'),
-        ).to_plotly_json()
-    )
+    # Add basic legend trace for image embeddings only if it doesn't exist
+    # Only count legend traces, not the main data trace (index 0)
+    has_embedding_legend = any(i > 0 and trace.get('name') == 'image embedding' 
+                              for i, trace in enumerate(scatterplot_fig['data']))
+    if not has_embedding_legend:
+        scatterplot_fig['data'].append(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name='image embedding',
+                marker=dict(size=7, color="blue", symbol='circle'),
+            ).to_plotly_json()
+        )
 
 
 # Clientside callback to handle gallery highlighting via direct DOM manipulation (multi-selection)

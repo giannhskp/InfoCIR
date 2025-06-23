@@ -190,16 +190,20 @@ def _update_legend_for_selected_image(scatterplot):
     if selected_image_trace:
         scatterplot['data'].append(selected_image_trace)
     
-    # Add updated legend traces
-    scatterplot['data'].append(
-        go.Scatter(
-            x=[None],
-            y=[None],
-            mode="markers",
-            name='image embedding',
-            marker=dict(size=7, color="blue", symbol='circle'),
-        ).to_plotly_json()
-    )
+    # Add updated legend traces only if they don't exist
+    # Only count legend traces, not the main data trace (index 0)
+    has_embedding_legend = any(i > 0 and trace.get('name') == 'image embedding' 
+                              for i, trace in enumerate(scatterplot['data']))
+    if not has_embedding_legend:
+        scatterplot['data'].append(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="markers",
+                name='image embedding',
+                marker=dict(size=7, color="blue", symbol='circle'),
+            ).to_plotly_json()
+        )
 
     # Only add "Selected Image" legend trace if there's no actual selected image trace
     if not selected_image_trace:
