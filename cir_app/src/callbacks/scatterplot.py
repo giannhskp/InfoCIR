@@ -60,6 +60,12 @@ def unified_scatterplot_controller(
         current_traces = len(scatterplot_fig['data'])
         current_trace_names = [trace.get('name', 'unnamed') for trace in scatterplot_fig['data']]
         print(f"DEBUG: Input figure has {current_traces} traces: {current_trace_names}")
+        
+        # Defensive check: If CIR should be active but traces are missing, log warning
+        has_cir_traces = any(name in ['Top-K', 'Top-1', 'Query', 'Final Query'] for name in current_trace_names)
+        if cir_toggle_state and search_data and not has_cir_traces and current_traces <= 2:
+            print(f"WARNING: CIR active but no CIR traces found! Trigger: {trigger_id}")
+            print(f"WARNING: This suggests a race condition where CIR traces were lost")
     
     # -------------------------------------------------------------------------
     # 1. PROJECTION CHANGE - Rebuild entire figure from scratch
@@ -265,24 +271,63 @@ def unified_scatterplot_controller(
             new_fig['data'].append(legend_trace.to_plotly_json())
             print(f"DEBUG: Added missing 'image embedding' legend trace")
         
+        # Apply zoom-responsive sizing to all traces including newly added CIR traces
+        if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
+            zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
+            print(f"Applying zoom factor {zoom_factor} to CIR traces")
+            new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
+        
+        # Final debug check to ensure CIR traces are properly added
+        final_trace_names = [trace.get('name', 'unnamed') for trace in new_fig['data']]
+        print(f"DEBUG: cir-toggle-state final trace count: {len(new_fig['data'])}, names: {final_trace_names}")
+        
         return new_fig
     
     # -------------------------------------------------------------------------
-    # 4. ZOOM/RELAYOUT - Add thumbnail images when zoomed in
+    # 4. ZOOM/RELAYOUT - Add thumbnail images when zoomed in and apply zoom-responsive sizing
     # -------------------------------------------------------------------------
     elif trigger_id == 'scatterplot' and relayoutData:
         print("Handling scatterplot zoom/relayout")
+        print(f"DEBUG: relayoutData = {relayoutData}")
         
         # Skip dragmode changes
         if len(relayoutData) == 1 and 'dragmode' in relayoutData:
             return dash.no_update
+        
+        import copy
+        new_fig = copy.deepcopy(scatterplot_fig)
+        
+        # Check if this is an axis reset (autorange) or explicit zoom
+        is_axis_reset = ('xaxis.autorange' in relayoutData or 'yaxis.autorange' in relayoutData)
+        has_explicit_range = ('xaxis.range[0]' in relayoutData or 'yaxis.range[0]' in relayoutData)
+        
+        if is_axis_reset:
+            print('Handling axis reset - restoring original marker sizes')
+            # Axis reset: apply zoom factor of 1.0 (original sizes)
+            zoom_factor = 1.0
+            new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
+            # Clear thumbnail images when resetting
+            new_fig['layout']['images'] = []
             
-        # Skip if no zoom range
-        if 'xaxis.range[0]' not in relayoutData:
-            return dash.no_update
+        elif has_explicit_range:
+            print('Adding thumbnail overlays and applying zoom-responsive sizing')
+            # Apply zoom-responsive marker sizing
+            zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
+            print(f"Calculated zoom factor: {zoom_factor}")
+            new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
             
-        print('Adding thumbnail overlays for zoom')
-        return scatterplot.add_images_to_scatterplot(scatterplot_fig)
+            # Add thumbnail images
+            new_fig = scatterplot.add_images_to_scatterplot(new_fig)
+        else:
+            # Other relayout changes - apply zoom-responsive sizing if we have ranges
+            print(f"Other relayout change: {relayoutData}")
+            # Don't block the update, but apply zoom-responsive sizing if possible
+            if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
+                zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
+                print(f"Applying zoom factor {zoom_factor} to other relayout change")
+                new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
+        
+        return new_fig
     
     # -------------------------------------------------------------------------
     # 5. SCATTERPLOT SELECTION - Handle drag selection (only when CIR off)
@@ -310,6 +355,86 @@ def unified_scatterplot_controller(
     # -------------------------------------------------------------------------
     elif trigger_id.startswith('{"index"') and trigger_id.endswith('gallery-card"}'):
         print("Handling gallery image selection - returning no_update for now")
+        
+        # Defensive check: If CIR should be active but traces are missing, restore them
+        if scatterplot_fig and 'data' in scatterplot_fig:
+            current_trace_names = [trace.get('name', 'unnamed') for trace in scatterplot_fig['data']]
+            has_cir_traces = any(name in ['Top-K', 'Top-1', 'Query', 'Final Query'] for name in current_trace_names)
+            
+            if cir_toggle_state and search_data and not has_cir_traces:
+                print("WARNING: Gallery click detected missing CIR traces, restoring them")
+                # Restore CIR traces using the same logic as cir-toggle-state handler
+                import copy
+                new_fig = copy.deepcopy(scatterplot_fig)
+                
+                # Re-add CIR traces (simplified version)
+                df = Dataset.get()
+                topk_ids = search_data.get('topk_ids', [])
+                top1_id = search_data.get('top1_id', None)
+                
+                # Get coordinates from main trace
+                main_trace = new_fig['data'][0]
+                xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
+                
+                # Find coordinates for Top-K and Top-1
+                x1, y1, xk, yk = [], [], [], []
+                top1_id_cmp = int(top1_id) if top1_id is not None else None
+                topk_ids_cmp = [int(x) for x in topk_ids]
+                
+                for xi, yi, idx in zip(xs, ys, cds):
+                    idx_cmp = int(idx) if idx is not None else None
+                    if idx_cmp == top1_id_cmp:
+                        x1.append(xi); y1.append(yi)
+                    elif idx_cmp in topk_ids_cmp:
+                        xk.append(xi); yk.append(yi)
+                
+                # Add traces in order: Top-K, Top-1, Query, Final Query
+                if xk:
+                    trace_k = go.Scatter(
+                        x=xk, y=yk, mode='markers', 
+                        marker=dict(color=config.TOP_K_COLOR, size=7, opacity=1.0), 
+                        name='Top-K', showlegend=True, visible=True
+                    )
+                    new_fig['data'].append(trace_k.to_plotly_json())
+                    
+                if x1:
+                    trace_1 = go.Scatter(
+                        x=x1, y=y1, mode='markers', 
+                        marker=dict(color=config.TOP_1_COLOR, size=9, opacity=1.0), 
+                        name='Top-1', showlegend=True, visible=True
+                    )
+                    new_fig['data'].append(trace_1.to_plotly_json())
+                
+                # Add Query and Final Query traces for UMAP
+                axis_title = new_fig['layout']['xaxis']['title']['text']
+                if axis_title == 'umap_x':
+                    xq, yq = search_data.get('umap_x_query'), search_data.get('umap_y_query')
+                    xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
+                    
+                    if xq is not None:
+                        trace_q = go.Scatter(
+                            x=[xq], y=[yq], mode='markers', 
+                            marker=dict(color=config.QUERY_COLOR, size=12, symbol='star', opacity=1.0), 
+                            name='Query', showlegend=True, visible=True
+                        )
+                        new_fig['data'].append(trace_q.to_plotly_json())
+                        
+                    if xfq is not None:
+                        trace_fq = go.Scatter(
+                            x=[xfq], y=[yfq], mode='markers', 
+                            marker=dict(color=config.FINAL_QUERY_COLOR, size=10, symbol='diamond', opacity=1.0), 
+                            name='Final Query', showlegend=True, visible=True
+                        )
+                        new_fig['data'].append(trace_fq.to_plotly_json())
+                
+                # Apply zoom-responsive sizing
+                if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
+                    zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
+                    new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
+                
+                print(f"WARNING: Restored CIR traces, now have {len(new_fig['data'])} traces")
+                return new_fig
+        
         # TODO: Implement proper gallery selection logic
         # For now, don't interfere with scatterplot figure
         return dash.no_update
@@ -386,6 +511,12 @@ def unified_scatterplot_controller(
             else:
                 # Select - highlight this class
                 scatterplot.highlight_class_on_scatterplot(new_fig, [selected_scatterplot_class])
+        
+        # Apply zoom-responsive sizing to all traces including class highlighting
+        if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
+            zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
+            print(f"Applying zoom factor {zoom_factor} to class selection traces")
+            new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
         
         return new_fig
     
@@ -525,6 +656,12 @@ def unified_scatterplot_controller(
                 marker=dict(size=7, color="blue", symbol='circle')
             )
             new_fig['data'].append(legend_trace.to_plotly_json())
+        
+        # Apply zoom-responsive sizing to all traces including enhanced prompt traces
+        if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
+            zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
+            print(f"Applying zoom factor {zoom_factor} to enhanced prompt traces")
+            new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
         
         return new_fig
     
@@ -707,6 +844,12 @@ def unified_scatterplot_controller(
                 )
                 new_fig['data'].append(sel_trace.to_plotly_json())
                 print(f"DEBUG: Added Selected Images trace with {len(sel_x)} points")
+        
+        # Apply zoom-responsive sizing to all traces including visualization mode traces
+        if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
+            zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
+            print(f"Applying zoom factor {zoom_factor} to visualization mode traces")
+            new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
         
         print(f"DEBUG: viz-selected-ids returning figure with {len(new_fig['data'])} traces")
         return new_fig
