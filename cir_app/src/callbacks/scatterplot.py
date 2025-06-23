@@ -597,9 +597,19 @@ def update_widgets_for_cir_toggle(cir_toggle_state, search_data, selected_galler
 def update_widgets_from_selection(selectedData, cir_toggle_state, scatterplot_fig):
     """Update widgets from scatterplot selection (no scatterplot figure output)"""
     
-    # Skip when CIR overlay is active
+    # When CIR is active, only update if there's an actual user selection
+    # This preserves CIR visualization when there's no selection
     if cir_toggle_state:
-        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+        # Check if there's an actual selection by looking at the scatterplot figure
+        main_trace = scatterplot_fig['data'][0] if scatterplot_fig and scatterplot_fig['data'] else None
+        has_selection = (main_trace and 
+                        'selectedpoints' in main_trace and 
+                        main_trace['selectedpoints'] and 
+                        len(main_trace['selectedpoints']) > 0)
+        
+        if not has_selection:
+            # No actual selection when CIR is active - preserve CIR visualization
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
     
     from src.widgets import gallery, wordcloud, histogram
     
