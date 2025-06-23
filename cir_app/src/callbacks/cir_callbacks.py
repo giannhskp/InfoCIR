@@ -974,6 +974,19 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     if isinstance(saliency_summary, dict):
         initial_saliency_dir = saliency_summary.get('save_directory')
 
+    # Extract token attribution data for each enhanced prompt
+    prompt_token_attributions = []
+    if enhanced_saliency_data and 'prompt_saliency' in enhanced_saliency_data:
+        mapping = enhanced_saliency_data['prompt_saliency']
+        for p in prompts:
+            entry = mapping.get(p)
+            if entry and 'text_attribution' in entry:
+                prompt_token_attributions.append(entry['text_attribution'])
+            else:
+                prompt_token_attributions.append(None)
+    else:
+        prompt_token_attributions = [None] * len(prompts)
+
     enhanced_prompts_data = {
         'prompts': prompts,
         'coverages': coverages,
@@ -986,7 +999,8 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         'best_idx': best_idx,
         'currently_viewing': best_idx,  # Default to showing best prompt results
         'prompt_saliency_dirs': prompt_saliency_dirs,
-        'initial_saliency_dir': initial_saliency_dir
+        'initial_saliency_dir': initial_saliency_dir,
+        'prompt_token_attributions': prompt_token_attributions  # Store in-memory token attribution data
     }
     
     return status, enhance_children, enhanced_prompts_data
