@@ -442,7 +442,7 @@ def apply_zoom_responsive_sizing(scatterplot_fig, zoom_factor):
 # Existing functions continue below
 # ---------------------------------------------------------------------------
 
-def add_images_to_scatterplot(scatterplot_fig):
+def add_images_to_scatterplot(scatterplot_fig, zoom_factor=None):
     """Add images to scatterplot when zoomed in"""
     scatterplot_fig['layout']['images'] = []
     scatterplot_data = scatterplot_fig['data'][0]
@@ -461,6 +461,21 @@ def add_images_to_scatterplot(scatterplot_fig):
             return scatterplot_fig
 
     if images_in_zoom:
+        # Calculate zoom-responsive image size
+        if zoom_factor is None:
+            zoom_factor = calculate_zoom_factor(scatterplot_fig['layout'])
+        
+        # Base image size (increased from 0.05 to 0.12 for larger thumbnails)
+        base_image_size = 0.3
+        
+        # Scale image size based on zoom - use moderate scaling to prevent images from becoming too large
+        # Use square root scaling to make growth less aggressive
+        image_scale_factor = max(0.5, min(zoom_factor ** 0.4, 3.0))
+        responsive_image_size = base_image_size * image_scale_factor
+        
+        # Ensure minimum and maximum bounds for image size
+        responsive_image_size = max(0.08, min(responsive_image_size, 0.75))
+        
         for x, y, image_id in images_in_zoom:
             image_path = Dataset.get().loc[image_id]['image_path']
             scatterplot_fig['layout']['images'].append(dict(
@@ -469,8 +484,8 @@ def add_images_to_scatterplot(scatterplot_fig):
                 source=Image.open(image_path),
                 xref="x",
                 yref="y",
-                sizex=.05,
-                sizey=.05,
+                sizex=responsive_image_size,
+                sizey=responsive_image_size,
                 xanchor="center",
                 yanchor="middle",
             ))

@@ -316,8 +316,8 @@ def unified_scatterplot_controller(
             print(f"Calculated zoom factor: {zoom_factor}")
             new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
             
-            # Add thumbnail images
-            new_fig = scatterplot.add_images_to_scatterplot(new_fig)
+            # Add thumbnail images with zoom-responsive sizing
+            new_fig = scatterplot.add_images_to_scatterplot(new_fig, zoom_factor)
         else:
             # Other relayout changes - apply zoom-responsive sizing if we have ranges
             print(f"Other relayout change: {relayoutData}")
