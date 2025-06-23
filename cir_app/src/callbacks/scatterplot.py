@@ -273,10 +273,6 @@ def unified_scatterplot_controller(
     elif trigger_id == 'scatterplot' and relayoutData:
         print("Handling scatterplot zoom/relayout")
         
-        # Skip thumbnail overlays when CIR is active to avoid covering traces
-        if cir_toggle_state:
-            return dash.no_update
-            
         # Skip dragmode changes
         if len(relayoutData) == 1 and 'dragmode' in relayoutData:
             return dash.no_update
