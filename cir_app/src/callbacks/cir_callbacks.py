@@ -987,6 +987,88 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     else:
         prompt_token_attributions = [None] * len(prompts)
 
+    # Compute Final Query coordinates for each enhanced prompt (UMAP only)
+    enhanced_final_query_coords = []
+    for i, prompt in enumerate(prompts):
+        # Recompute final query embedding for this enhanced prompt
+        _, content_string = search_data['upload_contents'].split(',')
+        decoded = base64.b64decode(content_string)
+        tmp_coord = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        tmp_coord.write(decoded); tmp_coord.close()
+        
+        try:
+            from src.shared import cir_systems
+            device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
+            img = Image.open(tmp_coord.name).convert('RGB')
+            inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
+            
+            with torch.no_grad():
+                feat_raw = cir_systems.cir_system_searle.clip_model.encode_image(inp).float()
+                feat = F.normalize(feat_raw, dim=-1)
+                feat_np = feat.detach().cpu().numpy()
+            
+            # Compute Final Query coordinates only for UMAP
+            xfq_enhanced = yfq_enhanced = None
+            if cir_systems.cir_system_searle.eval_type in ['phi','searle','searle-xl']:
+                pseudo = cir_systems.cir_system_searle.phi(feat_raw)
+                cap = f"a photo of $ that {prompt}"
+                tok = clip.tokenize([cap], context_length=77).to(device_model)
+                from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
+                final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo).float()
+                final_feat = F.normalize(final_feat, dim=-1)
+                final_query_feat_np = final_feat.detach().cpu().numpy().astype(np.float32)
+                
+                # Project to UMAP space
+                umap_path = config.WORK_DIR / 'umap_reducer.pkl'
+                pipeline_path = config.WORK_DIR / 'projection_pipeline.pkl'
+
+                def _apply_projection_pipeline_enhanced(arr_np):
+                    if not os.path.exists(pipeline_path):
+                        return arr_np
+                    try:
+                        pipe = pickle.load(open(str(pipeline_path), 'rb'))
+                        x = arr_np.copy()
+                        if pipe.get('style_scaler') is not None:
+                            x = pipe['style_scaler'].transform(x)
+                            x = pipe['style_pca'].transform(x)
+                            x = x[:, pipe['style_dims']]
+                        if pipe.get('contrastive_scaler') is not None:
+                            x_scaled = pipe['contrastive_scaler'].transform(x)
+                            protos = pipe['contrastive_prototypes']
+                            weight = pipe['contrastive_weight']
+                            dists = ((protos - x_scaled)**2).sum(axis=1)
+                            nearest_idx = int(dists.argmin())
+                            proto_vec = protos[nearest_idx]
+                            x_scaled = x_scaled + weight * (proto_vec - x_scaled)
+                            x = x_scaled
+                        if pipe.get('alt_scaler') is not None:
+                            x = pipe['alt_scaler'].transform(x)
+                            alt_model = pipe['alt_model']
+                            x = alt_model.transform(x)
+                        if pipe.get('final_pca') is not None:
+                            x = pipe['final_pca'].transform(x)
+                        return x
+                    except Exception as e:
+                        print(f"Warning: failed to apply projection pipeline: {e}")
+                        return arr_np
+
+                if os.path.exists(umap_path):
+                    umap_reducer = pickle.load(open(str(umap_path), 'rb'))
+                    proj_final = _apply_projection_pipeline_enhanced(final_query_feat_np)
+                    final_umap_xy = umap_reducer.transform(proj_final)
+                    xfq_enhanced, yfq_enhanced = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
+            
+            enhanced_final_query_coords.append({'x': xfq_enhanced, 'y': yfq_enhanced})
+            os.unlink(tmp_coord.name)
+            
+        except Exception as e:
+            print(f"Warning: failed to compute enhanced Final Query coords for prompt {i}: {e}")
+            enhanced_final_query_coords.append({'x': None, 'y': None})
+            try:
+                os.unlink(tmp_coord.name)
+            except:
+                pass
+
     enhanced_prompts_data = {
         'prompts': prompts,
         'coverages': coverages,
@@ -1000,7 +1082,8 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         'currently_viewing': best_idx,  # Default to showing best prompt results
         'prompt_saliency_dirs': prompt_saliency_dirs,
         'initial_saliency_dir': initial_saliency_dir,
-        'prompt_token_attributions': prompt_token_attributions  # Store in-memory token attribution data
+        'prompt_token_attributions': prompt_token_attributions,  # Store in-memory token attribution data
+        'enhanced_final_query_coords': enhanced_final_query_coords  # Store Final Query coordinates for each enhanced prompt
     }
     
     return status, enhance_children, enhanced_prompts_data
@@ -1449,107 +1532,14 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
             if idx in df.index:
                 topk_ids.append(idx)
         top1_id = topk_ids[0] if topk_ids else None
-        # Recompute final query embedding for enhanced prompt
-        _, content_string = search_data['upload_contents'].split(',')
-        decoded = base64.b64decode(content_string)
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-        tmp.write(decoded); tmp.close()
-        # Local import to avoid circular dependencies
-        from src.shared import cir_systems
-        device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
-        img = Image.open(tmp.name).convert('RGB')
-        inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
-        with torch.no_grad():
-            # Compute raw CLIP image embedding – φ expects unnormalised input.
-            feat_raw = cir_systems.cir_system_searle.clip_model.encode_image(inp).float()
-            # Keep a normalised copy for distance-based projections (UMAP/t-SNE).
-            feat = F.normalize(feat_raw, dim=-1)
-            feat_np = feat.detach().cpu().numpy()
-        if cir_systems.cir_system_searle.eval_type in ['phi','searle','searle-xl']:
-            pseudo = cir_systems.cir_system_searle.phi(feat_raw)
-            sel_prompt = prompts[selected_idx]
-            cap = f"a photo of $ that {sel_prompt}"
-            tok = clip.tokenize([cap], context_length=77).to(device_model)
-            from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
-            final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo).float()
-            final_feat = F.normalize(final_feat, dim=-1)
-            final_query_feat_np = final_feat.detach().cpu().numpy().astype(np.float32)
-        else:
-            final_feat = feat
-            final_query_feat_np = final_feat.detach().cpu().numpy()
-        # Only compute Final Query coordinates for UMAP projection
-        if axis_title == 'umap_x':
-            umap_path = config.WORK_DIR / 'umap_reducer.pkl'
-            pipeline_path = config.WORK_DIR / 'projection_pipeline.pkl'
-
-            def _apply_projection_pipeline(arr_np):
-                """Apply the saved pre-UMAP projection pipeline (style debias →
-                contrastive debias → alternative proj → final PCA) to *arr_np*
-                (shape: N×D).  If the pipeline file is missing we fall back to
-                the raw vectors so the app keeps working."""
-
-                if not os.path.exists(pipeline_path):
-                    return arr_np  # no pipeline – raw features
-
-                try:
-                    pipe = pickle.load(open(str(pipeline_path), 'rb'))
-
-                    x = arr_np.copy()
-
-                    # --- Style debiasing (scaler → PCA → semantic dims) ---
-                    if pipe.get('style_scaler') is not None:
-                        x = pipe['style_scaler'].transform(x)
-                        x = pipe['style_pca'].transform(x)
-                        x = x[:, pipe['style_dims']]
-
-                    # --- Contrastive debiasing (approximate: nearest prototype) ---
-                    if pipe.get('contrastive_scaler') is not None:
-                        x_scaled = pipe['contrastive_scaler'].transform(x)
-                        protos = pipe['contrastive_prototypes']
-                        weight = pipe['contrastive_weight']
-                        # Find nearest prototype in L2 sense
-                        dists = ((protos - x_scaled)**2).sum(axis=1)
-                        nearest_idx = int(dists.argmin())
-                        proto_vec = protos[nearest_idx]
-                        x_scaled = x_scaled + weight * (proto_vec - x_scaled)
-                        x = x_scaled  # remain in scaled space
-
-                    # --- Alternative projection ---
-                    if pipe.get('alt_scaler') is not None:
-                        x = pipe['alt_scaler'].transform(x)
-                        alt_model = pipe['alt_model']
-                        x = alt_model.transform(x)
-
-                    # --- Final PCA ---
-                    if pipe.get('final_pca') is not None:
-                        x = pipe['final_pca'].transform(x)
-
-                    return x
-                except Exception as e:
-                    print(f"Warning: failed to apply projection pipeline: {e}")
-                    return arr_np
-
-            if os.path.exists(umap_path):
-                umap_reducer = pickle.load(open(str(umap_path), 'rb'))
-
-                # --- Query ---
-                proj_input = _apply_projection_pipeline(feat_np)
-                umap_xy = umap_reducer.transform(proj_input)
-                umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
-
-                # --- Final Query ---
-                if final_query_feat_np is not None:
-                    proj_final = _apply_projection_pipeline(final_query_feat_np)
-                    final_umap_xy = umap_reducer.transform(proj_final)
-                    umap_x_final_query, umap_y_final_query = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
-                    xfq, yfq = umap_x_final_query, umap_y_final_query
-                else:
-                    umap_x_final_query = umap_y_final_query = None
-            else:
-                umap_x_query = umap_y_query = umap_x_final_query = umap_y_final_query = None
-        else:
-            xfq, yfq = None, None  # Final query only shown for UMAP
-        os.unlink(tmp.name)
+        # Use pre-computed Final Query coordinates from enhanced prompts data
+        # No need to recompute - we already calculated these during prompt enhancement!
+        xfq = yfq = None
+        if axis_title == 'umap_x' and enhanced_data:
+            enhanced_coords = enhanced_data.get('enhanced_final_query_coords', [])
+            if selected_idx < len(enhanced_coords):
+                coord_data = enhanced_coords[selected_idx]
+                xfq, yfq = coord_data.get('x'), coord_data.get('y')
     # Scatterplot updates now handled by unified controller
     # Wordcloud
     counts = df.loc[topk_ids]['class_name'].value_counts()

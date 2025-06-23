@@ -453,15 +453,69 @@ def unified_scatterplot_controller(
             elif idx_cmp in topk_ids_cmp:
                 xk.append(xi); yk.append(yi)
         
+        # Add traces in order: Top-K, Top-1, Query, Final Query
         if xk:
-            trace_k = go.Scatter(x=xk, y=yk, mode='markers', 
-                               marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
+            trace_k = go.Scatter(
+                x=xk, y=yk, mode='markers', 
+                marker=dict(color=config.TOP_K_COLOR, size=7, opacity=1.0), 
+                name='Top-K',
+                showlegend=True,
+                visible=True
+            )
             new_fig['data'].append(trace_k.to_plotly_json())
             
         if x1:
-            trace_1 = go.Scatter(x=x1, y=y1, mode='markers', 
-                               marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
+            trace_1 = go.Scatter(
+                x=x1, y=y1, mode='markers', 
+                marker=dict(color=config.TOP_1_COLOR, size=9, opacity=1.0), 
+                name='Top-1',
+                showlegend=True,
+                visible=True
+            )
             new_fig['data'].append(trace_1.to_plotly_json())
+        
+        # Add Query and Final Query traces if they exist in search_data
+        # Determine projection type for query positioning
+        axis_title = new_fig['layout']['xaxis']['title']['text']
+        if axis_title == 'umap_x' and search_data:
+            xq, yq = search_data.get('umap_x_query'), search_data.get('umap_y_query')
+            
+            # Query trace (only for UMAP) - always use original query coordinates
+            if xq is not None:
+                trace_q = go.Scatter(
+                    x=[xq], y=[yq], mode='markers', 
+                    marker=dict(color=config.QUERY_COLOR, size=12, symbol='star', opacity=1.0), 
+                    name='Query',
+                    showlegend=True,
+                    visible=True
+                )
+                new_fig['data'].append(trace_q.to_plotly_json())
+                
+            # Final Query trace (only for UMAP)
+            xfq = yfq = None
+            if prompt_selection is not None and prompt_selection >= 0:
+                # Use enhanced prompt's Final Query coordinates
+                enhanced_coords = enhanced_prompts_data.get('enhanced_final_query_coords', [])
+                if prompt_selection < len(enhanced_coords):
+                    coord_data = enhanced_coords[prompt_selection]
+                    xfq, yfq = coord_data.get('x'), coord_data.get('y')
+                else:
+                    xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
+                    print(f"DEBUG: prompt-selection falling back to original coords: x={xfq}, y={yfq}")
+            else:
+                # Use original Final Query coordinates
+                xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
+                print(f"DEBUG: prompt-selection using original coords: x={xfq}, y={yfq}")
+                
+            if xfq is not None and yfq is not None:
+                trace_fq = go.Scatter(
+                    x=[xfq], y=[yfq], mode='markers', 
+                    marker=dict(color=config.FINAL_QUERY_COLOR, size=10, symbol='diamond', opacity=1.0), 
+                    name='Final Query',
+                    showlegend=True,
+                    visible=True
+                )
+                new_fig['data'].append(trace_fq.to_plotly_json())
         
         # Ensure we have exactly one "image embedding" legend trace when enhanced prompt is selected
         # Only count legend traces, not the main data trace (index 0)
@@ -486,6 +540,7 @@ def unified_scatterplot_controller(
         print(f"DEBUG: viz_mode = {viz_mode}")
         print(f"DEBUG: cir_toggle_state = {cir_toggle_state}")
         print(f"DEBUG: search_data is None = {search_data is None}")
+        print(f"DEBUG: prompt_selection = {prompt_selection}")
         
         import copy
         new_fig = copy.deepcopy(scatterplot_fig)
@@ -502,8 +557,34 @@ def unified_scatterplot_controller(
             
             # Re-add CIR traces (same logic as CIR toggle handler)
             df = Dataset.get()
-            topk_ids = search_data.get('topk_ids', [])
-            top1_id = search_data.get('top1_id', None)
+            
+            # FIXED: Determine which data to use based on current prompt selection
+            if prompt_selection is not None and prompt_selection >= 0 and enhanced_prompts_data:
+                # Use enhanced prompt results
+                results_lists = enhanced_prompts_data.get('all_results', [])
+                if prompt_selection < len(results_lists):
+                    results = results_lists[prompt_selection]
+                    topk_ids = []
+                    for img_name, _ in results:
+                        try:
+                            idx = int(img_name)
+                            if idx in df.index:
+                                topk_ids.append(idx)
+                        except:
+                            if img_name in df.index:
+                                topk_ids.append(img_name)
+                    top1_id = topk_ids[0] if topk_ids else None
+                    print(f"DEBUG: viz-selected-ids using enhanced prompt {prompt_selection} with {len(topk_ids)} results")
+                else:
+                    # Fallback to original search data
+                    topk_ids = search_data.get('topk_ids', [])
+                    top1_id = search_data.get('top1_id', None)
+                    print(f"DEBUG: viz-selected-ids falling back to original search data")
+            else:
+                # Use original search data
+                topk_ids = search_data.get('topk_ids', [])
+                top1_id = search_data.get('top1_id', None)
+                print(f"DEBUG: viz-selected-ids using original search data")
             
             # Get coordinates from main trace
             main_trace = new_fig['data'][0]
@@ -513,7 +594,20 @@ def unified_scatterplot_controller(
             axis_title = new_fig['layout']['xaxis']['title']['text']
             if axis_title == 'umap_x':
                 xq, yq = search_data.get('umap_x_query'), search_data.get('umap_y_query')
-                xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
+                
+                # Determine Final Query coordinates based on prompt selection
+                xfq = yfq = None
+                if prompt_selection is not None and prompt_selection >= 0 and enhanced_prompts_data:
+                    # Use enhanced prompt's Final Query coordinates
+                    enhanced_coords = enhanced_prompts_data.get('enhanced_final_query_coords', [])
+                    if prompt_selection < len(enhanced_coords):
+                        coord_data = enhanced_coords[prompt_selection]
+                        xfq, yfq = coord_data.get('x'), coord_data.get('y')
+                    else:
+                        xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
+                else:
+                    # Use original Final Query coordinates
+                    xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
             else:
                 xq, yq = search_data.get('tsne_x_query'), search_data.get('tsne_y_query')
                 xfq, yfq = None, None  # Final query only for UMAP
@@ -563,7 +657,7 @@ def unified_scatterplot_controller(
                 new_fig['data'].append(trace_q.to_plotly_json())
                 
             # Final Query trace (only for UMAP)
-            if xfq is not None and axis_title == 'umap_x':
+            if xfq is not None and yfq is not None and axis_title == 'umap_x':
                 trace_fq = go.Scatter(
                     x=[xfq], y=[yfq], mode='markers', 
                     marker=dict(color=config.FINAL_QUERY_COLOR, size=10, symbol='diamond', opacity=1.0), 
