@@ -93,10 +93,12 @@ def unified_scatterplot_controller(
         if new_fig['data'] and 'selectedpoints' in new_fig['data'][0]:
             new_fig['data'][0]['selectedpoints'] = []
             
-        # Reset main trace colors if CIR is not active
-        if not cir_toggle_state:
-            from src.widgets.scatterplot import _set_marker_colors
-            _set_marker_colors(new_fig['data'][0], config.SCATTERPLOT_COLOR)
+        # Always reset main trace colors to clear any class highlighting
+        from src.widgets.scatterplot import _set_marker_colors
+        _set_marker_colors(new_fig['data'][0], config.SCATTERPLOT_COLOR)
+        
+        # Also clear class highlighting legend
+        scatterplot.highlight_class_on_scatterplot(new_fig, None)
             
         return new_fig
     
