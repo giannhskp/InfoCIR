@@ -356,11 +356,12 @@ def get_data_selected_on_scatterplot(scatterplot_fig):
     """Get selected data from scatterplot"""
     scatterplot_fig_data = scatterplot_fig['data'][0]
 
-    if 'selectedpoints' in scatterplot_fig_data:
+    if 'selectedpoints' in scatterplot_fig_data and scatterplot_fig_data['selectedpoints']:
         selected_image_ids = list(map(scatterplot_fig_data['customdata'].__getitem__, scatterplot_fig_data['selectedpoints']))
         data_selected = Dataset.get().loc[selected_image_ids]
     else:
-        data_selected = Dataset.get()
+        # Return empty DataFrame when no selection instead of entire dataset
+        data_selected = Dataset.get().iloc[:0]
 
     # --------------------------------------------------------------
     # Skip adding thumbnail overlays when CIR visualisation markers

@@ -819,10 +819,8 @@ def manage_class_selection_and_histogram_highlighting(scatterplot_click, histogr
             highlight_classes = [new_selected_class] if new_selected_class else None
             histogram_fig = histogram_widget.draw_histogram(cir_df, highlight_classes)
         else:
-            # No scatterplot selection and no CIR - show full dataset with class highlighting
-            full_data = Dataset.get()
-            highlight_classes = [new_selected_class] if new_selected_class else None
-            histogram_fig = histogram_widget.draw_histogram(full_data, highlight_classes)
+            # No scatterplot selection and no CIR - show empty histogram (don't default to full dataset)
+            histogram_fig = histogram_widget.draw_histogram(None)
     else:
         # Fallback
         histogram_fig = histogram_widget.draw_histogram(None)
