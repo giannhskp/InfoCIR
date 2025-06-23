@@ -251,6 +251,20 @@ def unified_scatterplot_controller(
             trace_names = [trace.get('name', 'unnamed') for trace in new_fig['data']]
             print(f"DEBUG: Trace names: {trace_names}")
         
+        # Ensure we have exactly one "image embedding" legend trace when CIR is active
+        # Only count legend traces, not the main data trace (index 0)
+        legend_traces = [trace for i, trace in enumerate(new_fig['data']) 
+                        if i > 0 and trace.get('name') == 'image embedding']
+        has_legend = len(legend_traces) > 0
+        if not has_legend:
+            # Add legend trace if missing
+            legend_trace = go.Scatter(
+                x=[None], y=[None], mode="markers", name='image embedding',
+                marker=dict(size=7, color="blue", symbol='circle')
+            )
+            new_fig['data'].append(legend_trace.to_plotly_json())
+            print(f"DEBUG: Added missing 'image embedding' legend trace")
+        
         return new_fig
     
     # -------------------------------------------------------------------------
@@ -352,6 +366,19 @@ def unified_scatterplot_controller(
                 class_highlighted=bool(selected_scatterplot_class),
                 color=config.SCATTERPLOT_SELECTED_COLOR,
             )
+            
+            # Ensure we have exactly one "image embedding" legend trace when CIR is active during class selection
+            # Only count legend traces, not the main data trace (index 0)
+            legend_traces = [trace for i, trace in enumerate(new_fig['data']) 
+                            if i > 0 and trace.get('name') == 'image embedding']
+            has_legend = len(legend_traces) > 0
+            if not has_legend:
+                # Add legend trace if missing
+                legend_trace = go.Scatter(
+                    x=[None], y=[None], mode="markers", name='image embedding',
+                    marker=dict(size=7, color="blue", symbol='circle')
+                )
+                new_fig['data'].append(legend_trace.to_plotly_json())
         else:
             # Normal mode - no CIR traces to preserve
             if selected_scatterplot_class is None:
@@ -435,6 +462,19 @@ def unified_scatterplot_controller(
             trace_1 = go.Scatter(x=x1, y=y1, mode='markers', 
                                marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
             new_fig['data'].append(trace_1.to_plotly_json())
+        
+        # Ensure we have exactly one "image embedding" legend trace when enhanced prompt is selected
+        # Only count legend traces, not the main data trace (index 0)
+        legend_traces = [trace for i, trace in enumerate(new_fig['data']) 
+                        if i > 0 and trace.get('name') == 'image embedding']
+        has_legend = len(legend_traces) > 0
+        if not has_legend:
+            # Add legend trace if missing
+            legend_trace = go.Scatter(
+                x=[None], y=[None], mode="markers", name='image embedding',
+                marker=dict(size=7, color="blue", symbol='circle')
+            )
+            new_fig['data'].append(legend_trace.to_plotly_json())
         
         return new_fig
     
@@ -534,6 +574,20 @@ def unified_scatterplot_controller(
                 new_fig['data'].append(trace_fq.to_plotly_json())
             
             print(f"DEBUG: viz-selected-ids re-added CIR traces, now have {len(new_fig['data'])} traces")
+            
+            # Ensure we have exactly one "image embedding" legend trace when CIR is active
+            # Only count legend traces, not the main data trace (index 0)
+            legend_traces = [trace for i, trace in enumerate(new_fig['data']) 
+                            if i > 0 and trace.get('name') == 'image embedding']
+            has_legend = len(legend_traces) > 0
+            if not has_legend:
+                # Add legend trace if missing
+                legend_trace = go.Scatter(
+                    x=[None], y=[None], mode="markers", name='image embedding',
+                    marker=dict(size=7, color="blue", symbol='circle')
+                )
+                new_fig['data'].append(legend_trace.to_plotly_json())
+                print(f"DEBUG: viz-selected-ids added missing 'image embedding' legend trace")
         else:
             # Remove existing Selected Images trace but preserve other traces
             new_fig['data'] = [tr for tr in new_fig['data'] if tr.get('name') != 'Selected Images']
