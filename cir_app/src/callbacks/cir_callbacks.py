@@ -1949,7 +1949,7 @@ def show_cir_search_loading(n_clicks):
 )
 def apply_selected_class_after_rebuild(is_fullscreen, enhanced_data, current_selected_idx, current_classnames):
     """Apply the selected class to the appropriate prompt card after UI rebuild (e.g., fullscreen toggle)"""
-    if not enhanced_data or current_selected_idx is None or current_selected_idx < 0:
+    if not enhanced_data or current_selected_idx is None:
         raise PreventUpdate
     
     prompts = enhanced_data.get('prompts', [])
@@ -1959,13 +1959,42 @@ def apply_selected_class_after_rebuild(is_fullscreen, enhanced_data, current_sel
     new_classnames = []
     for i in range(len(prompts)):
         is_best = (i == best_idx)
-        is_selected = (i == current_selected_idx)
+        is_selected = (i == current_selected_idx and current_selected_idx >= 0)
         
         class_parts = ["prompt-enhancement-card"]
         if is_best:
             class_parts.append("best-prompt")
         if is_selected:
             class_parts.append("selected")
+        new_classnames.append(" ".join(class_parts))
+    
+    return new_classnames
+
+# Callback to clear prompt card selection when deselect button is pressed
+@callback(
+    Output({'type': 'prompt-card', 'index': ALL}, 'className', allow_duplicate=True),
+    Input('prompt-selection', 'value'),
+    [State('cir-enhanced-prompts-data', 'data'),
+     State({'type': 'prompt-card', 'index': ALL}, 'className')],
+    prevent_initial_call=True
+)
+def clear_prompt_selection_on_deselect(selected_idx, enhanced_data, current_classnames):
+    """Clear prompt card selection when prompt-selection becomes -1 (deselected)"""
+    if not enhanced_data or selected_idx != -1:
+        raise PreventUpdate
+    
+    prompts = enhanced_data.get('prompts', [])
+    best_idx = enhanced_data.get('best_idx')
+    
+    # Build class names without any selection
+    new_classnames = []
+    for i in range(len(prompts)):
+        is_best = (i == best_idx)
+        
+        class_parts = ["prompt-enhancement-card"]
+        if is_best:
+            class_parts.append("best-prompt")
+        # No "selected" class since we're deselecting
         new_classnames.append(" ".join(class_parts))
     
     return new_classnames
