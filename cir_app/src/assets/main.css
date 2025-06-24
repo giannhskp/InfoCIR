@@ -431,7 +431,7 @@ html, body {
 
 /* Enhanced Prompt Cards */
 .prompt-enhancement-card {
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: all 0.3s ease;
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
     margin-bottom: var(--spacing-sm);
@@ -439,6 +439,41 @@ html, body {
     background: var(--bg-tertiary);
     overflow: hidden;
     position: relative;
+    /* Ensure stable positioning */
+    transform: translateZ(0);
+    will-change: transform, box-shadow;
+}
+
+/* Fullscreen mode specific styling for prompt enhancement cards */
+.prompt-enhancement-card[style*="position: fixed"] {
+    /* Ensure cards don't overflow in fullscreen mode */
+    max-width: 100%;
+    max-height: 100%;
+    overflow: visible;
+    /* Disable complex transforms in fullscreen */
+    transform: none !important;
+    will-change: auto;
+}
+
+/* Fullscreen mode styling for prompt enhancement container */
+#prompt-enh-card[style*="position: fixed"] {
+    /* Ensure proper overflow handling in fullscreen */
+    overflow: auto !important;
+    padding: 1rem !important;
+}
+
+#prompt-enh-card[style*="position: fixed"] #prompt-enhancement-content {
+    /* Ensure content doesn't overflow in fullscreen */
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Ensure prompt cards container doesn't cause horizontal overflow */
+.prompt-cards-container {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 .prompt-enhancement-card::before {
@@ -455,8 +490,8 @@ html, body {
 }
 
 .prompt-enhancement-card:hover {
-    transform: translateY(-3px) scale(1.01);
-    box-shadow: var(--shadow-xl);
+    /* Simplified hover effect - no complex transforms */
+    box-shadow: var(--shadow-lg);
 }
 
 .prompt-enhancement-card:hover::before {
@@ -470,7 +505,7 @@ html, body {
 }
 
 .prompt-enhancement-card.selected {
-    transform: translateY(-4px) scale(1.02);
+    /* Simplified selected state */
     box-shadow: var(--shadow-xl);
     border-width: 2px;
 }

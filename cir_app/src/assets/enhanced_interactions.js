@@ -55,9 +55,10 @@
     }
 
     function enhanceCardInteractions() {
-        // Add magnetic effect to cards
+        // Add magnetic effect to cards (excluding prompt enhancement cards for simpler effect)
+        // Prompt enhancement cards get a simplified hover effect to prevent overflow issues in fullscreen mode
         document.addEventListener('mousemove', function(e) {
-            const cards = document.querySelectorAll('.result-card, .gallery-card, .prompt-enhancement-card');
+            const cards = document.querySelectorAll('.result-card, .gallery-card');
             
             cards.forEach(card => {
                 const rect = card.getBoundingClientRect();
@@ -80,10 +81,45 @@
 
         // Reset transform when mouse leaves
         document.addEventListener('mouseleave', function() {
-            const cards = document.querySelectorAll('.result-card, .gallery-card, .prompt-enhancement-card');
+            const cards = document.querySelectorAll('.result-card, .gallery-card');
             cards.forEach(card => {
                 card.style.transform = '';
             });
+        });
+
+        // Add simpler, more stable hover effect for prompt enhancement cards
+        document.addEventListener('mouseover', function(e) {
+            const promptCard = e.target.closest('.prompt-enhancement-card');
+            if (promptCard) {
+                // Check if we're in fullscreen mode - multiple detection methods
+                const parentCard = promptCard.closest('#prompt-enh-card');
+                const isFullscreen = parentCard && (
+                    parentCard.style.position === 'fixed' || 
+                    parentCard.style.width === '100vw' ||
+                    parentCard.style.height === '100vh'
+                );
+                
+                if (isFullscreen) {
+                    // Very simple effect for fullscreen mode - just shadow
+                    promptCard.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.1)';
+                    promptCard.style.transition = 'box-shadow 0.2s ease';
+                } else {
+                    // Clean hover effect for normal mode - no scaling to prevent blurriness
+                    promptCard.style.transform = 'translateY(-3px)';
+                    promptCard.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
+                    promptCard.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
+                }
+            }
+        });
+
+        document.addEventListener('mouseout', function(e) {
+            const promptCard = e.target.closest('.prompt-enhancement-card');
+            if (promptCard) {
+                // Reset to original state
+                promptCard.style.transform = '';
+                promptCard.style.boxShadow = '';
+                promptCard.style.transition = '';
+            }
         });
     }
 
