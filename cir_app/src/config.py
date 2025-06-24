@@ -18,10 +18,10 @@ SELECTED_CLASS_COLOR = 'red'    # Color for other images of the same class as se
 MAX_IMAGES_ON_SCATTERPLOT = 100
 
 # Server configuration
-PORT = 8052  # Port number for the Dash application
+PORT = 8051  # Port number for the Dash application
 
 # Dataset configuration
-DATASET_SAMPLE_SIZE = 29000  # Sample size from dataset
+DATASET_SAMPLE_SIZE = 30000  # Sample size from dataset
 
 # NEW UMAP CONFIGURATION - Enhanced UMAP with debiasing techniques
 USE_NEW_UMAP = True  # Set to True to use the new enhanced UMAP implementation, False for original
@@ -98,7 +98,7 @@ CIR_FREEDOM_FEATURES_PATH = WORK_DIR / 'clip_features'  # Path for Freedom featu
 # Saliency configuration
 SALIENCY_ENABLED = True  # Whether to generate saliency maps for CIR queries
 SALIENCY_OUTPUT_DIR = WORK_DIR / 'saliency_output'  # Directory to save saliency visualizations
-SALIENCY_MAX_CANDIDATES = 1  # Maximum number of candidates to generate saliency maps for (set to None for all top-k)
+SALIENCY_MAX_CANDIDATES = None  # Maximum number of candidates to generate saliency maps for (set to None for all top-k)
 SALIENCY_GENERATE_REFERENCE = True  # Whether to generate reference image saliency
 SALIENCY_GENERATE_CANDIDATES = True  # Whether to generate candidate image saliency
 SALIENCY_GENERATE_TEXT_ATTRIBUTION = True  # Whether to generate text token attribution
