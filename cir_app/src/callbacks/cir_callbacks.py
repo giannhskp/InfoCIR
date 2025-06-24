@@ -974,6 +974,101 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     if isinstance(saliency_summary, dict):
         initial_saliency_dir = saliency_summary.get('save_directory')
 
+    # Extract token attribution data for each enhanced prompt
+    prompt_token_attributions = []
+    if enhanced_saliency_data and 'prompt_saliency' in enhanced_saliency_data:
+        mapping = enhanced_saliency_data['prompt_saliency']
+        for p in prompts:
+            entry = mapping.get(p)
+            if entry and 'text_attribution' in entry:
+                prompt_token_attributions.append(entry['text_attribution'])
+            else:
+                prompt_token_attributions.append(None)
+    else:
+        prompt_token_attributions = [None] * len(prompts)
+
+    # Compute Final Query coordinates for each enhanced prompt (UMAP only)
+    enhanced_final_query_coords = []
+    for i, prompt in enumerate(prompts):
+        # Recompute final query embedding for this enhanced prompt
+        _, content_string = search_data['upload_contents'].split(',')
+        decoded = base64.b64decode(content_string)
+        tmp_coord = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        tmp_coord.write(decoded); tmp_coord.close()
+        
+        try:
+            from src.shared import cir_systems
+            device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
+            img = Image.open(tmp_coord.name).convert('RGB')
+            inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
+            
+            with torch.no_grad():
+                feat_raw = cir_systems.cir_system_searle.clip_model.encode_image(inp).float()
+                feat = F.normalize(feat_raw, dim=-1)
+                feat_np = feat.detach().cpu().numpy()
+            
+            # Compute Final Query coordinates only for UMAP
+            xfq_enhanced = yfq_enhanced = None
+            if cir_systems.cir_system_searle.eval_type in ['phi','searle','searle-xl']:
+                pseudo = cir_systems.cir_system_searle.phi(feat_raw)
+                cap = f"a photo of $ that {prompt}"
+                tok = clip.tokenize([cap], context_length=77).to(device_model)
+                from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
+                final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo).float()
+                final_feat = F.normalize(final_feat, dim=-1)
+                final_query_feat_np = final_feat.detach().cpu().numpy().astype(np.float32)
+                
+                # Project to UMAP space
+                umap_path = config.WORK_DIR / 'umap_reducer.pkl'
+                pipeline_path = config.WORK_DIR / 'projection_pipeline.pkl'
+
+                def _apply_projection_pipeline_enhanced(arr_np):
+                    if not os.path.exists(pipeline_path):
+                        return arr_np
+                    try:
+                        pipe = pickle.load(open(str(pipeline_path), 'rb'))
+                        x = arr_np.copy()
+                        if pipe.get('style_scaler') is not None:
+                            x = pipe['style_scaler'].transform(x)
+                            x = pipe['style_pca'].transform(x)
+                            x = x[:, pipe['style_dims']]
+                        if pipe.get('contrastive_scaler') is not None:
+                            x_scaled = pipe['contrastive_scaler'].transform(x)
+                            protos = pipe['contrastive_prototypes']
+                            weight = pipe['contrastive_weight']
+                            dists = ((protos - x_scaled)**2).sum(axis=1)
+                            nearest_idx = int(dists.argmin())
+                            proto_vec = protos[nearest_idx]
+                            x_scaled = x_scaled + weight * (proto_vec - x_scaled)
+                            x = x_scaled
+                        if pipe.get('alt_scaler') is not None:
+                            x = pipe['alt_scaler'].transform(x)
+                            alt_model = pipe['alt_model']
+                            x = alt_model.transform(x)
+                        if pipe.get('final_pca') is not None:
+                            x = pipe['final_pca'].transform(x)
+                        return x
+                    except Exception as e:
+                        print(f"Warning: failed to apply projection pipeline: {e}")
+                        return arr_np
+
+                if os.path.exists(umap_path):
+                    umap_reducer = pickle.load(open(str(umap_path), 'rb'))
+                    proj_final = _apply_projection_pipeline_enhanced(final_query_feat_np)
+                    final_umap_xy = umap_reducer.transform(proj_final)
+                    xfq_enhanced, yfq_enhanced = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
+            
+            enhanced_final_query_coords.append({'x': xfq_enhanced, 'y': yfq_enhanced})
+            os.unlink(tmp_coord.name)
+            
+        except Exception as e:
+            print(f"Warning: failed to compute enhanced Final Query coords for prompt {i}: {e}")
+            enhanced_final_query_coords.append({'x': None, 'y': None})
+            try:
+                os.unlink(tmp_coord.name)
+            except:
+                pass
+
     enhanced_prompts_data = {
         'prompts': prompts,
         'coverages': coverages,
@@ -986,7 +1081,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         'best_idx': best_idx,
         'currently_viewing': best_idx,  # Default to showing best prompt results
         'prompt_saliency_dirs': prompt_saliency_dirs,
-        'initial_saliency_dir': initial_saliency_dir
+        'initial_saliency_dir': initial_saliency_dir,
+        'prompt_token_attributions': prompt_token_attributions,  # Store in-memory token attribution data
+        'enhanced_final_query_coords': enhanced_final_query_coords  # Store Final Query coordinates for each enhanced prompt
     }
     
     return status, enhance_children, enhanced_prompts_data
@@ -1391,7 +1488,6 @@ def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data, vi
     [Output('gallery', 'children', allow_duplicate=True),
      Output('wordcloud', 'list', allow_duplicate=True),
      Output('histogram', 'figure', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True),
      Output('selected-image-data', 'data', allow_duplicate=True),
      Output('selected-gallery-image-ids', 'data', allow_duplicate=True)],
     Input('prompt-selection', 'value'),
@@ -1436,143 +1532,15 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
             if idx in df.index:
                 topk_ids.append(idx)
         top1_id = topk_ids[0] if topk_ids else None
-        # Recompute final query embedding for enhanced prompt
-        _, content_string = search_data['upload_contents'].split(',')
-        decoded = base64.b64decode(content_string)
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-        tmp.write(decoded); tmp.close()
-        # Local import to avoid circular dependencies
-        from src.shared import cir_systems
-        device_model = next(cir_systems.cir_system_searle.clip_model.parameters()).device
-        img = Image.open(tmp.name).convert('RGB')
-        inp = cir_systems.cir_system_searle.preprocess(img).unsqueeze(0).to(device_model)
-        with torch.no_grad():
-            # Compute raw CLIP image embedding – φ expects unnormalised input.
-            feat_raw = cir_systems.cir_system_searle.clip_model.encode_image(inp).float()
-            # Keep a normalised copy for distance-based projections (UMAP/t-SNE).
-            feat = F.normalize(feat_raw, dim=-1)
-            feat_np = feat.detach().cpu().numpy()
-        if cir_systems.cir_system_searle.eval_type in ['phi','searle','searle-xl']:
-            pseudo = cir_systems.cir_system_searle.phi(feat_raw)
-            sel_prompt = prompts[selected_idx]
-            cap = f"a photo of $ that {sel_prompt}"
-            tok = clip.tokenize([cap], context_length=77).to(device_model)
-            from src.callbacks.SEARLE.src.encode_with_pseudo_tokens import encode_with_pseudo_tokens
-            final_feat = encode_with_pseudo_tokens(cir_systems.cir_system_searle.clip_model, tok, pseudo).float()
-            final_feat = F.normalize(final_feat, dim=-1)
-            final_query_feat_np = final_feat.detach().cpu().numpy().astype(np.float32)
-        else:
-            final_feat = feat
-            final_query_feat_np = final_feat.detach().cpu().numpy()
-        # Only compute Final Query coordinates for UMAP projection
-        if axis_title == 'umap_x':
-            umap_path = config.WORK_DIR / 'umap_reducer.pkl'
-            pipeline_path = config.WORK_DIR / 'projection_pipeline.pkl'
-
-            def _apply_projection_pipeline(arr_np):
-                """Apply the saved pre-UMAP projection pipeline (style debias →
-                contrastive debias → alternative proj → final PCA) to *arr_np*
-                (shape: N×D).  If the pipeline file is missing we fall back to
-                the raw vectors so the app keeps working."""
-
-                if not os.path.exists(pipeline_path):
-                    return arr_np  # no pipeline – raw features
-
-                try:
-                    pipe = pickle.load(open(str(pipeline_path), 'rb'))
-
-                    x = arr_np.copy()
-
-                    # --- Style debiasing (scaler → PCA → semantic dims) ---
-                    if pipe.get('style_scaler') is not None:
-                        x = pipe['style_scaler'].transform(x)
-                        x = pipe['style_pca'].transform(x)
-                        x = x[:, pipe['style_dims']]
-
-                    # --- Contrastive debiasing (approximate: nearest prototype) ---
-                    if pipe.get('contrastive_scaler') is not None:
-                        x_scaled = pipe['contrastive_scaler'].transform(x)
-                        protos = pipe['contrastive_prototypes']
-                        weight = pipe['contrastive_weight']
-                        # Find nearest prototype in L2 sense
-                        dists = ((protos - x_scaled)**2).sum(axis=1)
-                        nearest_idx = int(dists.argmin())
-                        proto_vec = protos[nearest_idx]
-                        x_scaled = x_scaled + weight * (proto_vec - x_scaled)
-                        x = x_scaled  # remain in scaled space
-
-                    # --- Alternative projection ---
-                    if pipe.get('alt_scaler') is not None:
-                        x = pipe['alt_scaler'].transform(x)
-                        alt_model = pipe['alt_model']
-                        x = alt_model.transform(x)
-
-                    # --- Final PCA ---
-                    if pipe.get('final_pca') is not None:
-                        x = pipe['final_pca'].transform(x)
-
-                    return x
-                except Exception as e:
-                    print(f"Warning: failed to apply projection pipeline: {e}")
-                    return arr_np
-
-            if os.path.exists(umap_path):
-                umap_reducer = pickle.load(open(str(umap_path), 'rb'))
-
-                # --- Query ---
-                proj_input = _apply_projection_pipeline(feat_np)
-                umap_xy = umap_reducer.transform(proj_input)
-                umap_x_query, umap_y_query = float(umap_xy[0][0]), float(umap_xy[0][1])
-
-                # --- Final Query ---
-                if final_query_feat_np is not None:
-                    proj_final = _apply_projection_pipeline(final_query_feat_np)
-                    final_umap_xy = umap_reducer.transform(proj_final)
-                    umap_x_final_query, umap_y_final_query = float(final_umap_xy[0][0]), float(final_umap_xy[0][1])
-                    xfq, yfq = umap_x_final_query, umap_y_final_query
-                else:
-                    umap_x_final_query = umap_y_final_query = None
-            else:
-                umap_x_query = umap_y_query = umap_x_final_query = umap_y_final_query = None
-        else:
-            xfq, yfq = None, None  # Final query only shown for UMAP
-        os.unlink(tmp.name)
-    # Reset CIR traces
-    scatterplot_fig['data'] = [
-        trace for trace in scatterplot_fig['data']
-        if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
-    ]
-    scatterplot_fig['layout']['images'] = []
-    main = scatterplot_fig['data'][0]
-    xs, ys, cds = main['x'], main['y'], main['customdata']
-    
-    # Reset main trace colours without touching other marker attrs (size, opacity…)
-    from src.widgets.scatterplot import _set_marker_colors as _set_marker_colors_helper
-    _set_marker_colors_helper(main, config.SCATTERPLOT_COLOR)
-    # Plot Top-K and Top-1
-    x1, y1, xk, yk = [], [], [], []
-    cmp1 = int(top1_id) if top1_id is not None else None
-    cmpk = [int(i) for i in topk_ids]
-    for xi, yi, val in zip(xs, ys, cds):
-        try:
-            v = int(val)
-        except Exception:
-            v = val
-        if v == cmp1:
-            x1.append(xi); y1.append(yi)
-        elif v in cmpk:
-            xk.append(xi); yk.append(yi)
-    # Plot Query and Final Query
-    if xk:
-        trace_k = go.Scatter(x=xk, y=yk, mode='markers', marker=dict(color=config.TOP_K_COLOR, size=7), name='Top-K')
-        scatterplot_fig['data'].append(trace_k.to_plotly_json())
-    if xq is not None:
-        scatterplot_fig['data'].append(go.Scatter(x=[xq],y=[yq],mode='markers',marker=dict(color=config.QUERY_COLOR,size=12,symbol='star'),name='Query').to_plotly_json())
-    if xfq is not None:
-        scatterplot_fig['data'].append(go.Scatter(x=[xfq],y=[yfq],mode='markers',marker=dict(color=config.FINAL_QUERY_COLOR,size=10,symbol='diamond'),name='Final Query').to_plotly_json())
-    if x1:
-        trace_1 = go.Scatter(x=x1, y=y1, mode='markers', marker=dict(color=config.TOP_1_COLOR, size=9), name='Top-1')
-        scatterplot_fig['data'].append(trace_1.to_plotly_json())
+        # Use pre-computed Final Query coordinates from enhanced prompts data
+        # No need to recompute - we already calculated these during prompt enhancement!
+        xfq = yfq = None
+        if axis_title == 'umap_x' and enhanced_data:
+            enhanced_coords = enhanced_data.get('enhanced_final_query_coords', [])
+            if selected_idx < len(enhanced_coords):
+                coord_data = enhanced_coords[selected_idx]
+                xfq, yfq = coord_data.get('x'), coord_data.get('y')
+    # Scatterplot updates now handled by unified controller
     # Wordcloud
     counts = df.loc[topk_ids]['class_name'].value_counts()
     if len(counts):
@@ -1584,7 +1552,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     # Clear any previous gallery selections when switching to enhanced prompt results
     gal = gallery.create_gallery_children(cir_df['image_path'].values,cir_df['class_name'].values,cir_df.index.values,[])
     hist = histogram.draw_histogram(cir_df)
-    return gal, wc, hist, scatterplot_fig, None, []
+    return gal, wc, hist, None, []
 
 @callback(
     Output('model-change-flag', 'children'),
@@ -1806,7 +1774,7 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
      Output('cir-results', 'children', allow_duplicate=True),
      Output('cir-selected-image-ids', 'data', allow_duplicate=True),
      Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+],
     Input('visualize-toggle-button', 'n_clicks'),
     [State('viz-mode', 'data'),
      State('prompt-selection', 'value'),
@@ -1823,7 +1791,7 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
         label = 'Visualize ON' if current_mode else 'Visualize OFF'
         color = 'success' if current_mode else 'secondary'
         from dash import no_update
-        return current_mode, label, color, no_update, no_update, no_update, no_update
+        return current_mode, label, color, no_update, no_update, no_update
     
     # Toggle the mode
     new_mode = not current_mode
@@ -1834,19 +1802,11 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
     cleared_cir_selected = []
     cleared_viz_selected = []
 
-    # Clear visualization traces from scatterplot when switching modes
-    import copy
-    if scatterplot_fig is not None:
-        updated_fig = copy.deepcopy(scatterplot_fig)
-        # Remove Selected Images trace when switching modes
-        updated_fig['data'] = [tr for tr in updated_fig['data'] if tr.get('name') != 'Selected Images']
-    else:
-        from dash import no_update
-        updated_fig = no_update
+    # Scatterplot updates now handled by unified controller
 
     # Rebuild Query Results layout with new viz_mode state
     if search_data is None:
-        return new_mode, label, color, no_update, cleared_cir_selected, cleared_viz_selected, updated_fig
+        return new_mode, label, color, no_update, cleared_cir_selected, cleared_viz_selected
 
     # Determine which results to show (baseline or selected enhanced prompt)
     if selected_idx is not None and selected_idx >= 0 and enhanced_data is not None:
@@ -1864,17 +1824,15 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
         else:
             layout = no_update
 
-    return new_mode, label, color, layout, cleared_cir_selected, cleared_viz_selected, updated_fig
+    return new_mode, label, color, layout, cleared_cir_selected, cleared_viz_selected
 
 # -----------------------------------------------------------------------------
-# React to viz-mode changes – clear selections & update scatterplot when turning
-# OFF, and ensure button label stays in sync after layout rebuilds.
+# React to viz-mode changes – clear selections when turning OFF
 # -----------------------------------------------------------------------------
 
 @callback(
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
-     Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+     Output('viz-selected-ids', 'data', allow_duplicate=True)],
     Input('viz-mode', 'data'),
     [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
      State('viz-selected-ids', 'data'),
@@ -1882,14 +1840,12 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
     prevent_initial_call=True
 )
 def handle_viz_mode_change(viz_mode, current_classnames, selected_ids, scatterplot_fig):
-    """When visualization mode is toggled OFF, clear selected ids, highlights,
-    and scatterplot traces. When toggled ON there is nothing to update here."""
-    from dash import no_update
+    """When visualization mode is toggled OFF, clear selected ids and highlights."""
     if viz_mode:
         # Turning ON – keep current selections/highlights
         raise PreventUpdate
 
-    # Turning OFF – remove visual-selected class and clear scatterplot trace
+    # Turning OFF – remove visual-selected class (scatterplot handled by unified controller)
     new_classnames = []
     for cls in current_classnames:
         parts = cls.split()
@@ -1897,12 +1853,7 @@ def handle_viz_mode_change(viz_mode, current_classnames, selected_ids, scatterpl
             parts.remove('visual-selected')
         new_classnames.append(' '.join(parts))
 
-    import copy
-    fig = copy.deepcopy(scatterplot_fig)
-    # Remove Selected Images trace(s)
-    fig['data'] = [tr for tr in fig['data'] if tr.get('name') not in ['Selected Images']]
-
-    return new_classnames, [], fig
+    return new_classnames, []
 
 # -----------------------------------------------------------------------------
 # Selection of images while Visualization mode is ON (multi-select capability)
@@ -1910,8 +1861,7 @@ def handle_viz_mode_change(viz_mode, current_classnames, selected_ids, scatterpl
 
 @callback(
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
-     Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+     Output('viz-selected-ids', 'data', allow_duplicate=True)],
     Input({'type': 'cir-result-card', 'index': ALL}, 'n_clicks'),
     [State({'type': 'cir-result-card', 'index': ALL}, 'className'),
      State('viz-mode', 'data'),
@@ -1976,36 +1926,8 @@ def select_images_for_visualization(n_clicks_list, current_classnames, viz_mode,
             parts.remove('visual-selected')
         new_classnames.append(' '.join(parts))
 
-    # ---------------------------------------------------------------------
-    # Update scatterplot – remove previous Selected Images trace, then add
-    # new trace if there are selections.
-    # ---------------------------------------------------------------------
-    import copy
-    fig = copy.deepcopy(scatterplot_fig)
-    # Remove existing Selected Images trace(s)
-    fig['data'] = [tr for tr in fig['data'] if tr.get('name') != 'Selected Images']
-
-    if selected_ids:
-        main_trace = fig['data'][0]
-        xs, ys, cds = main_trace['x'], main_trace['y'], main_trace['customdata']
-        sel_x, sel_y = [], []
-        sel_set = set(selected_ids)
-        for xi, yi, cid in zip(xs, ys, cds):
-            if str(cid) in sel_set:
-                sel_x.append(xi)
-                sel_y.append(yi)
-
-        if sel_x:
-            sel_trace = go.Scatter(
-                x=sel_x,
-                y=sel_y,
-                mode='markers',
-                marker=dict(color=config.SELECTED_IMAGE_COLOR, size=9),
-                name='Selected Images'
-            )
-            fig['data'].append(sel_trace.to_plotly_json())
-
-    return new_classnames, selected_ids, fig
+    # Scatterplot updates now handled by unified controller
+    return new_classnames, selected_ids
 
 # -----------------------------------------------------------------------------
 # Clear selections when the global "Visualize CIR results" / "Hide CIR results"
@@ -2014,8 +1936,7 @@ def select_images_for_visualization(n_clicks_list, current_classnames, viz_mode,
 
 @callback(
     [Output({'type': 'cir-result-card', 'index': ALL}, 'className', allow_duplicate=True),
-     Output('viz-selected-ids', 'data', allow_duplicate=True),
-     Output('scatterplot', 'figure', allow_duplicate=True)],
+     Output('viz-selected-ids', 'data', allow_duplicate=True)],
     Input('cir-toggle-button', 'n_clicks'),
     [State('viz-mode', 'data'),
      State({'type': 'cir-result-card', 'index': ALL}, 'className'),
@@ -2051,17 +1972,8 @@ def clear_visual_selections_on_cir_toggle(n_clicks, viz_mode, current_classnames
             parts.remove('visual-selected')
         new_classnames.append(' '.join(parts))
 
-    # -------------------------------------------------------------
-    # Strip the "Selected Images" trace from the scatterplot figure
-    # -------------------------------------------------------------
-    if scatterplot_fig is None:
-        new_fig = no_update
-    else:
-        new_fig = copy.deepcopy(scatterplot_fig)
-        new_fig['data'] = [tr for tr in new_fig['data'] if tr.get('name') != 'Selected Images']
-
-    # Return cleared selections and updated figure
-    return new_classnames, [], new_fig
+    # Scatterplot updates now handled by unified controller
+    return new_classnames, []
 
 # -----------------------------------------------------------------------------
 # Loading visualisation for Prompt Enhancement

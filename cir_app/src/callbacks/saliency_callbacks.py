@@ -390,10 +390,12 @@ def switch_saliency_for_enhanced_prompt(selected_idx, enhanced_data, current_sal
     [Input('saliency-data', 'data'),
      Input('token-attribution-index', 'data'),
      Input('cir-toggle-state', 'data'),
-     Input('token-attr-fullscreen', 'data')],
+     Input('token-attr-fullscreen', 'data'),
+     Input('prompt-selection', 'value')],
+    [State('cir-enhanced-prompts-data', 'data')],
     prevent_initial_call=True
 )
-def update_token_attribution_display(saliency_data, current_index, cir_toggle_state, token_attr_fullscreen):
+def update_token_attribution_display(saliency_data, current_index, cir_toggle_state, token_attr_fullscreen, selected_prompt_idx, enhanced_data):
     """Render token attribution barplot for the currently viewed candidate (no reference)."""
     global _current_pairs
 
@@ -407,16 +409,35 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
             "", True, True
         )
 
-    # Validate data availability
-    if not saliency_data or 'text_attribution' not in saliency_data:
+    # Determine which token attribution data to use
+    text_attr = None
+    
+    # Check if an enhanced prompt is selected and we have in-memory token attribution data
+    if (selected_prompt_idx is not None and selected_prompt_idx >= 0 and 
+        enhanced_data and 'prompt_token_attributions' in enhanced_data):
+        prompt_token_attributions = enhanced_data['prompt_token_attributions']
+        if selected_prompt_idx < len(prompt_token_attributions):
+            text_attr = prompt_token_attributions[selected_prompt_idx]
+    
+    # Fallback to saliency_data if no enhanced prompt selected or data not available
+    if text_attr is None:
+        if not saliency_data or 'text_attribution' not in saliency_data:
+            return (
+                html.Div([
+                    html.I(className="fas fa-info-circle text-muted me-2"),
+                     html.Span("Token attribution not available", className="text-muted")], className="p-2"),
+                "", True, True
+            )
+        text_attr = saliency_data.get('text_attribution', {})
+    
+    # Validate that text_attr is not None and has data
+    if not text_attr:
         return (
             html.Div([
                 html.I(className="fas fa-info-circle text-muted me-2"),
                  html.Span("Token attribution not available", className="text-muted")], className="p-2"),
             "", True, True
         )
-
-    text_attr = saliency_data.get('text_attribution', {})
     
     # Build list of ONLY candidate attributions (one per retrieved image)
     candidate_attributions = []
@@ -505,37 +526,73 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
 
     # Build Plotly bar chart
     fig = go.Figure(data=[
-        go.Bar(x=token_labels, y=attributions, marker=dict(color=attributions, colorscale='Reds'))
+        go.Bar(x=token_labels, y=attributions, marker=dict(color=attributions, colorscale='Reds'), width=0.6)
     ])
+
+    # Calculate dynamic layout based on token count and token lengths using formulas
+    num_tokens = len(token_labels)
+    max_token_length = max(len(token) for token in token_labels) if token_labels else 0
     
-    # Title for candidate attribution
-    # title = f"Candidate Text Attribution (Rank {rank_num})"
-    
-    # Adjust chart size based on fullscreen mode
+    # Original heights (don't change these)
     if token_attr_fullscreen:
         chart_height = 400
-        chart_margin = dict(l=30, r=30, t=50, b=100)
-        title_font_size = 16
-        axis_font_size = 12
+        base_bottom_margin = 100
+        base_font_size = 12
     else:
         chart_height = 130
-        chart_margin = dict(l=20, r=20, t=25, b=50)
-        title_font_size = 11
-        axis_font_size = 9
+        base_bottom_margin = 50
+        base_font_size = 10
     
+    # Formula-based calculations
+    # Font size: gradually smaller as tokens increase, with minimum bounds
+    font_scale = max(0.6, 1 - (num_tokens - 10) * 0.02)  # 0.6 to 1.0 scale
+    tick_font_size = max(6, int(base_font_size * 0.8 * font_scale))
+    axis_font_size = max(8, int(base_font_size * font_scale))
+    title_font_size = max(10, int(base_font_size * 1.2 * font_scale))
+    
+    # Tick angle: more aggressive as tokens increase
+    tick_angle = -45 - min(30, num_tokens * 0.8)  # -45° to -75°
+    
+    # Bottom margin: account for longer tokens and steeper angles
+    angle_factor = abs(tick_angle) / 90.0  # 0.5 to 0.83
+    length_factor = min(max_token_length * 2, 40)
+    extra_margin = length_factor * angle_factor
+    
+    # Determine scrolling threshold (only for very long sequences)
+    needs_scrolling = num_tokens > 40
+    
+    chart_margin = dict(
+        l=30 if token_attr_fullscreen else 20,
+        r=30 if token_attr_fullscreen else 20, 
+        t=50 if token_attr_fullscreen else 25,
+        b=int(base_bottom_margin + extra_margin)
+    )
+
+    # Update layout with calculated values (original width behavior)
     fig.update_layout(
         height=chart_height,
         margin=chart_margin,
-        xaxis_tickangle=-45,
+        xaxis_tickangle=tick_angle,
         xaxis_title="Tokens",
         yaxis_title="Attribution Score",
-        # title=title,
         title_font_size=title_font_size,
         xaxis_title_font_size=axis_font_size,
         yaxis_title_font_size=axis_font_size,
-        template='simple_white'
+        xaxis_title_standoff=20,
+        template='simple_white',
+        # Make bars narrower and reduce gaps
+        bargap=0.1,  # Small gap between bars (was default ~0.2)
+        xaxis=dict(
+            tickfont=dict(size=tick_font_size),
+            tickmode='linear',
+            dtick=1
+        ),
+        yaxis=dict(
+            tickfont=dict(size=tick_font_size)
+        )
     )
 
+    # Original graph creation (no width manipulation)
     graph = dcc.Graph(
         figure=fig, 
         config={'displayModeBar': False}, 
@@ -543,7 +600,7 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
     )
 
     # Navigation info - show rank
-    nav_info = f"Rank {rank_num}"
+    nav_info = f"Rank {current_index + 1}"
 
     # Navigation buttons state
     prev_dis = current_index <= 0
@@ -561,28 +618,45 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
     [Input('ta-prev-btn', 'n_clicks'),
      Input('ta-next-btn', 'n_clicks')],
     [State('token-attribution-index', 'data'),
-     State('saliency-data', 'data')],
+     State('saliency-data', 'data'),
+     State('prompt-selection', 'value'),
+     State('cir-enhanced-prompts-data', 'data')],
     prevent_initial_call=True
 )
-def navigate_token_attribution(prev_clicks, next_clicks, current_index, saliency_data):
+def navigate_token_attribution(prev_clicks, next_clicks, current_index, saliency_data, selected_prompt_idx, enhanced_data):
     """Handle prev/next navigation for token attribution charts."""
-    if not saliency_data or 'text_attribution' not in saliency_data:
-        raise PreventUpdate
     
-    # Determine total candidates – prefer saliency pairs order when available
-    text_attr = saliency_data.get('text_attribution', {})
+    # Determine which token attribution data to use
+    text_attr = None
+    
+    # Check if an enhanced prompt is selected and we have in-memory token attribution data
+    if (selected_prompt_idx is not None and selected_prompt_idx >= 0 and 
+        enhanced_data and 'prompt_token_attributions' in enhanced_data):
+        prompt_token_attributions = enhanced_data['prompt_token_attributions']
+        if selected_prompt_idx < len(prompt_token_attributions):
+            text_attr = prompt_token_attributions[selected_prompt_idx]
+    
+    # Fallback to saliency_data if no enhanced prompt selected or data not available
+    if text_attr is None:
+        if not saliency_data or 'text_attribution' not in saliency_data:
+            raise PreventUpdate
+        text_attr = saliency_data.get('text_attribution', {})
+    
+    if not text_attr:
+        raise PreventUpdate
 
-    if _current_pairs:
-        # Only count pairs that have matching attribution data
-        cand_keys = set(text_attr.get('candidates', {}).keys())
-        match_count = 0
-        for _, _, _, pair_name in _current_pairs:
-            stem = Path(pair_name).stem
-            if pair_name in cand_keys or stem in cand_keys:
-                match_count += 1
-        total_candidates = match_count if match_count else len(text_attr.get('candidates', {}))
-    else:
-        total_candidates = len(text_attr.get('candidates', {}))
+    # if _current_pairs:
+    #     # Only count pairs that have matching attribution data
+    #     cand_keys = set(text_attr.get('candidates', {}).keys())
+    #     match_count = 0
+    #     for _, _, _, pair_name in _current_pairs:
+    #         stem = Path(pair_name).stem
+    #         if pair_name in cand_keys or stem in cand_keys:
+    #             match_count += 1
+    #     total_candidates = match_count if match_count else len(text_attr.get('candidates', {}))
+    # else:
+    #     total_candidates = len(text_attr.get('candidates', {}))
+    total_candidates = len(text_attr.get('candidates', {}))
     
     if total_candidates == 0:
         raise PreventUpdate
@@ -602,9 +676,10 @@ def navigate_token_attribution(prev_clicks, next_clicks, current_index, saliency
 
 @callback(
     Output('token-attribution-index', 'data', allow_duplicate=True),
-    Input('saliency-data', 'data'),
+    [Input('saliency-data', 'data'),
+     Input('prompt-selection', 'value')],
     prevent_initial_call=True
 )
-def reset_token_attr_index_on_new_data(_):
-    """Reset token-attribution index when new saliency-data arrives."""
-    return 0 
+def reset_token_attr_index_on_new_data(saliency_data, selected_prompt_idx):
+    """Reset token-attribution index when new saliency-data arrives or prompt selection changes."""
+    return 0
