@@ -260,36 +260,41 @@ def run_ui():
     app.layout = html.Div(
         dbc.Container([
             help_popup_widget,
-            dbc.Stack([
-                html.Div([
-                    # Hidden placeholder for legacy callbacks – kept for ID consistency
-                    html.A(
-                        dbc.Button('Run CIR',
-                                   id='cir-run-button',
-                                   color='info',
-                                   class_name='header-button',
-                                   style={'display': 'none'}),
-                        href='#cir-interface',
-                        style={'textDecoration': 'none', 'display': 'none'}
-                    ),
-                    # Visualize button is always visible but starts disabled until results are available
-                    dbc.Button('Visualize CIR results', 
-                               id='cir-toggle-button',
-                               color="success",
-                               class_name="header-button",
-                               disabled=True,
-                               style={'display': 'block', 'color': 'black'}),
-                    dbc.Button('Deselect everything', 
-                               id='deselect-button', 
-                               class_name="btn btn-outline-primary header-button"),
-                    dbc.Button('Help', 
-                               id='help-button', 
-                               class_name="btn btn-outline-primary header-button")
-                ], className='ms-auto d-flex gap-2 align-items-center'),
-            ], id='header', direction="horizontal"),
             dbc.Row([
                 dbc.Col(left_column, width=3, className='main-col'),
-                dbc.Col(scatterplot_widget, width=6, className='main-col'),
+                dbc.Col([
+                    # Controls panel above scatterplot
+                    html.Div([
+                        # Hidden placeholder for legacy callbacks – kept for ID consistency
+                        html.A(
+                            dbc.Button('Run CIR',
+                                       id='cir-run-button',
+                                       color='info',
+                                       class_name='header-button',
+                                       style={'display': 'none'}),
+                            href='#cir-interface',
+                            style={'textDecoration': 'none', 'display': 'none'}
+                        ),
+                        # Visualize button is always visible but starts disabled until results are available
+                        dbc.Button('Visualize CIR results', 
+                                   id='cir-toggle-button',
+                                   color="success",
+                                   class_name="header-button",
+                                   disabled=True,
+                                   style={'display': 'block', 'color': 'black'}),
+                        dbc.Button('Deselect everything', 
+                                   id='deselect-button', 
+                                   class_name="btn btn-outline-primary header-button"),
+                        dbc.Button('Help', 
+                                   id='help-button', 
+                                   class_name="btn btn-outline-primary header-button")
+                    ], className='d-flex justify-content-center gap-2 align-items-center p-2', 
+                       style={'border': '1px solid #dee2e6', 'borderRadius': '0.375rem', 'backgroundColor': '#f8f9fa', 'marginBottom': '5px', 'flexShrink': '0'}),
+                    # Scatterplot container with proper height constraints
+                    html.Div([
+                        scatterplot_widget
+                    ], style={'flex': '1 1 auto', 'height': '0', 'overflow': 'hidden'})
+                ], width=6, className='main-col', style={'display': 'flex', 'flexDirection': 'column', 'height': '100%'}),
                 dbc.Col(
                     # RIGHT COLUMN STACKED COMPONENTS (no tabs)
                     html.Div([
