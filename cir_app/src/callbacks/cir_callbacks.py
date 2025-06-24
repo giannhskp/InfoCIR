@@ -1261,9 +1261,10 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
      Output('prompt-selection', 'value')],
     [Input('cir-enhanced-prompts-data', 'data'),
      Input('prompt-enh-fullscreen', 'data')],
+    [State('prompt-selection', 'value')],
     prevent_initial_call=True
 )
-def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
+def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen, current_selected_idx):
     """Populate the prompt enhancement tab when new enhanced prompts are available"""
     if not enhanced_data:
         # Show informational message when no enhancement data is available
@@ -1288,11 +1289,16 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
     cards = []
     for i, (prompt, cov, mean_rank, mean_sim, ndcg, ap, mrr) in enumerate(zip(prompts, coverages, mean_ranks, mean_sims, ndcgs, aps, mrrs)):
         is_best = (i == best_idx)
+        is_selected = (i == current_selected_idx)
         
-        # Card classes and styling
+        # Card classes and styling - DO NOT apply 'selected' class directly
+        # Let the CSS class management callbacks handle it dynamically
         card_classes = "prompt-enhancement-card"
         if is_best:
             card_classes += " best-prompt"
+        # Remove this line that was causing the issue:
+        # if is_selected:
+        #     card_classes += " selected"
         
         icon_class = "fas fa-crown text-warning" if is_best else "fas fa-magic text-info"
         title_text = "Best" if is_best else f"#{i+1}"
@@ -1360,19 +1366,20 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
         html.Div(cards, className="prompt-cards-container")
     ]
     
-    return content, all_options, None  # Default to no selection (original CIR)
+    return content, all_options, current_selected_idx
 
 # Callback to handle prompt card clicks and update selection
 @callback(
     [Output('prompt-selection', 'value', allow_duplicate=True),
-     Output({'type': 'prompt-card', 'index': ALL}, 'style')],
+     Output({'type': 'prompt-card', 'index': ALL}, 'className')], # Removed style output
     Input({'type': 'prompt-card', 'index': ALL}, 'n_clicks'),
     [State('prompt-selection', 'value'),
      State('cir-enhanced-prompts-data', 'data'),
-     State('viz-mode', 'data')],
+     State('viz-mode', 'data'),
+     State({'type': 'prompt-card', 'index': ALL}, 'className')],
     prevent_initial_call=True
 )
-def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, viz_mode):
+def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, viz_mode, current_classnames):
     """Handle card clicks for prompt selection"""
     if not any(n_clicks_list) or not enhanced_data:
         raise PreventUpdate
@@ -1399,86 +1406,24 @@ def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, vi
     else:
         new_selected = clicked_index
     
-    prompts = enhanced_data.get('prompts', [])
-    coverages = enhanced_data.get('coverages', [])
-    mean_ranks = enhanced_data.get('mean_ranks', [])
-    best_idx = enhanced_data.get('best_idx')
-    card_styles = []
-    # Enhanced prompt cards styling with inline styles for selection states
-    for i in range(len(prompts)):
+    prompts = enhanced_data.get('prompts', []) # Need prompts to iterate correctly
+    best_idx = enhanced_data.get('best_idx') # Need best_idx for class names
+    new_classnames = [] # This will hold the new class strings
+
+    # Loop through all prompt cards to determine their new class names
+    for i in range(len(prompts)): # Iterate through all possible indices
         is_best = (i == best_idx)
         is_selected = (i == new_selected)
         
-        # Base style (the CSS classes handle most styling)
-        style = {}
-        
-        # Add selection-specific inline styles to complement CSS
+        # --- Determine new class names ---
+        class_parts = ["prompt-enhancement-card"] # Start with base class
+        if is_best:
+            class_parts.append("best-prompt")
         if is_selected:
-            if is_best:
-                style.update({
-                    'transform': 'translateY(-3px)',
-                    'boxShadow': '0 8px 20px rgba(40, 167, 69, 0.5)',
-                    'borderWidth': '3px'
-                })
-            else:
-                style.update({
-                    'transform': 'translateY(-3px)', 
-                    'boxShadow': '0 8px 20px rgba(13, 202, 240, 0.5)',
-                    'borderWidth': '3px'
-                })
-        
-        card_styles.append(style)
-    return new_selected, card_styles
+            class_parts.append("selected")
+        new_classnames.append(" ".join(class_parts))
 
-# Callback to update card styles when prompt-selection changes from external sources
-@callback(
-    Output({'type': 'prompt-card', 'index': ALL}, 'style', allow_duplicate=True),
-    Input('prompt-selection', 'value'),
-    State('cir-enhanced-prompts-data', 'data'),
-    State('viz-mode', 'data'),
-    prevent_initial_call=True
-)
-def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data, viz_mode):
-    """Update card styles when prompt-selection changes from external sources (like deselect button)"""
-    if not enhanced_data:
-        raise PreventUpdate
-    
-    # If visualization mode is ON, ignore prompt-enhancement selection logic
-    if viz_mode:
-        raise PreventUpdate
-
-    prompts = enhanced_data.get('prompts', [])
-    coverages = enhanced_data.get('coverages', [])
-    mean_ranks = enhanced_data.get('mean_ranks', [])
-    best_idx = enhanced_data.get('best_idx')
-    card_styles = []
-    
-    # Enhanced prompt cards styling with inline styles for selection states
-    for i in range(len(prompts)):
-        is_best = (i == best_idx)
-        is_selected = (i == selected_idx)
-        
-        # Base style (the CSS classes handle most styling)
-        style = {}
-        
-        # Add selection-specific inline styles to complement CSS
-        if is_selected:
-            if is_best:
-                style.update({
-                    'transform': 'translateY(-3px)',
-                    'boxShadow': '0 8px 20px rgba(40, 167, 69, 0.5)',
-                    'borderWidth': '3px'
-                })
-            else:
-                style.update({
-                    'transform': 'translateY(-3px)', 
-                    'boxShadow': '0 8px 20px rgba(13, 202, 240, 0.5)',
-                    'borderWidth': '3px'
-                })
-        
-        card_styles.append(style)
-    
-    return card_styles
+    return new_selected, new_classnames
 
 # Callback to update all widgets when an enhanced prompt is selected
 @callback(
@@ -1992,3 +1937,35 @@ def show_cir_search_loading(n_clicks):
         dbc.Spinner(color="primary", type="border", size="lg", spinnerClassName="mb-3"),
         html.Span("Retrieving images…", className="text-muted fw-semibold")
     ], className="d-flex flex-column align-items-center justify-content-center p-4")
+
+# Callback to apply selected class after UI rebuild (e.g., during fullscreen toggle)
+@callback(
+    Output({'type': 'prompt-card', 'index': ALL}, 'className', allow_duplicate=True),
+    [Input('prompt-enh-fullscreen', 'data'),
+     Input('cir-enhanced-prompts-data', 'data')],
+    [State('prompt-selection', 'value'),
+     State({'type': 'prompt-card', 'index': ALL}, 'className')],
+    prevent_initial_call=True
+)
+def apply_selected_class_after_rebuild(is_fullscreen, enhanced_data, current_selected_idx, current_classnames):
+    """Apply the selected class to the appropriate prompt card after UI rebuild (e.g., fullscreen toggle)"""
+    if not enhanced_data or current_selected_idx is None or current_selected_idx < 0:
+        raise PreventUpdate
+    
+    prompts = enhanced_data.get('prompts', [])
+    best_idx = enhanced_data.get('best_idx')
+    
+    # Build the correct class names for all cards
+    new_classnames = []
+    for i in range(len(prompts)):
+        is_best = (i == best_idx)
+        is_selected = (i == current_selected_idx)
+        
+        class_parts = ["prompt-enhancement-card"]
+        if is_best:
+            class_parts.append("best-prompt")
+        if is_selected:
+            class_parts.append("selected")
+        new_classnames.append(" ".join(class_parts))
+    
+    return new_classnames

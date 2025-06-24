@@ -499,27 +499,26 @@ html, body {
 }
 
 .prompt-enhancement-card.best-prompt {
-    border: 2px solid #11998e;
+    /* border: 2px solid #11998e; */
     background: linear-gradient(135deg, rgba(17, 153, 142, 0.05), rgba(56, 239, 125, 0.05));
     box-shadow: 0 8px 25px rgba(17, 153, 142, 0.2);
 }
 
 .prompt-enhancement-card.selected {
-    /* Simplified selected state */
-    box-shadow: var(--shadow-xl);
-    border-width: 2px;
+    /* Consistent selected state for both normal and fullscreen modes */
+    border: 2px solid #667eea !important;
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3) !important;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)) !important;
+    /* Ensure selected state overrides hover effects */
+    transform: translateY(-3px) !important;
 }
 
 .prompt-enhancement-card.selected.best-prompt {
-    background: linear-gradient(135deg, rgba(17, 153, 142, 0.2), rgba(56, 239, 125, 0.2));
-    border-color: #0d7f71;
-    box-shadow: 0 12px 30px rgba(17, 153, 142, 0.4);
-}
-
-.prompt-enhancement-card.selected:not(.best-prompt) {
-    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
-    border-color: #667eea;
-    box-shadow: var(--shadow-glow);
+    border: 2px solid #667eea !important;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15)) !important;
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4) !important;
+    /* Ensure selected state overrides hover effects */
+    transform: translateY(-3px) !important;
 }
 
 /* Enhanced Prompt Card Content */
@@ -956,6 +955,8 @@ html, body {
     border-top-color: #2c3e50;
     pointer-events: none;
 }
+
+/* JavaScript will handle showing tooltips by cloning them to document.body */
 
 .tooltip-title {
     font-weight: 600;

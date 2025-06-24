@@ -21,7 +21,7 @@ MAX_IMAGES_ON_SCATTERPLOT = 100
 PORT = 8052  # Port number for the Dash application
 
 # Dataset configuration
-DATASET_SAMPLE_SIZE = 30000  # Sample size from dataset
+DATASET_SAMPLE_SIZE = 29000  # Sample size from dataset
 
 # NEW UMAP CONFIGURATION - Enhanced UMAP with debiasing techniques
 USE_NEW_UMAP = True  # Set to True to use the new enhanced UMAP implementation, False for original
@@ -47,7 +47,7 @@ NEW_UMAP_CONFIG = {
   
     'force_approximation_algorithm': False,  # Force UMAP approximation algorithm
     'enhanced_parameter_tuning': True,  # Apply enhanced parameter tuning for semantic clustering
-    'calculate_quality_metrics': True,  # Calculate comprehensive quality metrics
+    'calculate_quality_metrics': False,  # Calculate comprehensive quality metrics
     'use_hdbscan': False,  # Apply HDBSCAN clustering post-processing
     'hdbscan_min_cluster_size': 10,  # Minimum cluster size for HDBSCAN
 }
@@ -97,7 +97,7 @@ CIR_FREEDOM_FEATURES_PATH = WORK_DIR / 'clip_features'  # Path for Freedom featu
 # Saliency configuration
 SALIENCY_ENABLED = True  # Whether to generate saliency maps for CIR queries
 SALIENCY_OUTPUT_DIR = WORK_DIR / 'saliency_output'  # Directory to save saliency visualizations
-SALIENCY_MAX_CANDIDATES = None  # Maximum number of candidates to generate saliency maps for (set to None for all top-k)
+SALIENCY_MAX_CANDIDATES = 1  # Maximum number of candidates to generate saliency maps for (set to None for all top-k)
 SALIENCY_GENERATE_REFERENCE = True  # Whether to generate reference image saliency
 SALIENCY_GENERATE_CANDIDATES = True  # Whether to generate candidate image saliency
 SALIENCY_GENERATE_TEXT_ATTRIBUTION = True  # Whether to generate text token attribution

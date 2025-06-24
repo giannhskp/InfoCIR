@@ -9,7 +9,110 @@
     // Wait for DOM to be ready
     document.addEventListener('DOMContentLoaded', function() {
         initializeEnhancedInteractions();
+        initializeTooltips();
     });
+
+    // Initialize tooltip positioning
+    function initializeTooltips() {
+        let activeTooltip = null;
+        
+        // Hide original tooltips with CSS to prevent container clipping issues
+        const style = document.createElement('style');
+        style.textContent = `
+            .tooltip-container .custom-tooltip {
+                visibility: hidden !important;
+                opacity: 0 !important;
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.addEventListener('mouseover', function(e) {
+            const container = e.target.closest('.tooltip-container');
+            if (!container) return;
+            
+            const originalTooltip = container.querySelector('.custom-tooltip');
+            if (!originalTooltip) return;
+            
+            // Create a new tooltip element outside the container hierarchy
+            if (activeTooltip) {
+                activeTooltip.remove();
+            }
+            
+            activeTooltip = originalTooltip.cloneNode(true);
+            
+            // Remove any classes that might hide the tooltip and force visibility
+            activeTooltip.style.cssText = `
+                position: fixed !important;
+                z-index: 999999 !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: none !important;
+                background: linear-gradient(135deg, #2c3e50, #34495e) !important;
+                color: white !important;
+                padding: 1rem 1.5rem !important;
+                border-radius: 16px !important;
+                box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15) !important;
+                min-width: 200px !important;
+                max-width: 400px !important;
+                text-align: left !important;
+                white-space: normal !important;
+                word-wrap: break-word !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                backdrop-filter: blur(10px) !important;
+            `;
+            
+            // Append to body to escape any container clipping
+            document.body.appendChild(activeTooltip);
+            
+            // Position tooltip relative to cursor
+            positionTooltip(e, activeTooltip);
+            
+            // Follow cursor movement within container
+            const moveListener = (ev) => positionTooltip(ev, activeTooltip);
+            container.addEventListener('mousemove', moveListener);
+            
+            // Hide tooltip when leaving container
+            const leaveListener = () => {
+                if (activeTooltip) {
+                    activeTooltip.remove();
+                    activeTooltip = null;
+                }
+                container.removeEventListener('mousemove', moveListener);
+                container.removeEventListener('mouseleave', leaveListener);
+            };
+            container.addEventListener('mouseleave', leaveListener);
+        });
+        
+        function positionTooltip(evt, tooltip) {
+            if (!tooltip || !tooltip.parentNode) return;
+            
+            const rect = tooltip.getBoundingClientRect();
+            let x = evt.clientX + 15;
+            let y = evt.clientY - rect.height - 10;
+            
+            // Keep tooltip on screen
+            if (x + rect.width > window.innerWidth) {
+                x = evt.clientX - rect.width - 15;
+            }
+            if (y < 0) {
+                y = evt.clientY + 15;
+            }
+            if (y + rect.height > window.innerHeight) {
+                y = window.innerHeight - rect.height - 10;
+            }
+            
+            tooltip.style.left = x + 'px';
+            tooltip.style.top = y + 'px';
+        }
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {
+            if (activeTooltip) {
+                activeTooltip.remove();
+                activeTooltip = null;
+            }
+        });
+    }
 
     function initializeEnhancedInteractions() {
         // Add fade-in animation to main components
@@ -91,30 +194,24 @@
         document.addEventListener('mouseover', function(e) {
             const promptCard = e.target.closest('.prompt-enhancement-card');
             if (promptCard) {
-                // Check if we're in fullscreen mode - multiple detection methods
-                const parentCard = promptCard.closest('#prompt-enh-card');
-                const isFullscreen = parentCard && (
-                    parentCard.style.position === 'fixed' || 
-                    parentCard.style.width === '100vw' ||
-                    parentCard.style.height === '100vh'
-                );
-                
-                if (isFullscreen) {
-                    // Very simple effect for fullscreen mode - just shadow
-                    promptCard.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.1)';
-                    promptCard.style.transition = 'box-shadow 0.2s ease';
-                } else {
-                    // Clean hover effect for normal mode - no scaling to prevent blurriness
-                    promptCard.style.transform = 'translateY(-3px)';
-                    promptCard.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
-                    promptCard.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
+                // Don't apply hover effects to selected cards
+                if (promptCard.classList.contains('selected')) {
+                    return;
                 }
+                // Use consistent hover effect for both normal and fullscreen modes
+                promptCard.style.transform = 'translateY(-3px)';
+                promptCard.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.15)';
+                promptCard.style.transition = 'transform 0.2s ease, box-shadow 0.2s ease';
             }
         });
 
         document.addEventListener('mouseout', function(e) {
             const promptCard = e.target.closest('.prompt-enhancement-card');
             if (promptCard) {
+                // Don't reset styles for selected cards
+                if (promptCard.classList.contains('selected')) {
+                    return;
+                }
                 // Reset to original state
                 promptCard.style.transform = '';
                 promptCard.style.boxShadow = '';
