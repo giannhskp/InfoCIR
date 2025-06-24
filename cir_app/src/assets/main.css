@@ -7,10 +7,11 @@
     font-family: sans-serif;
     font-weight: bold;
     font-size: 20px;
-    position: absolute;
+    position: static;
     top: 15px;
     left: 0;
     width: 100%;
+    margin: 0 0 5px;
     padding-left: 50px;
     padding-right: 50px;
 }
@@ -35,7 +36,7 @@
 
 #container {
     height: 100vh;
-    padding: 65px 50px 10px;
+    padding: 11px 50px 10px;
 }
 
 #wordcloud {
