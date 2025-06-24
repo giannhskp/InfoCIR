@@ -7,17 +7,18 @@ from PIL import Image
 import io
 
 from dash import callback, Input, Output, State, html, dcc, callback_context
-import dash_bootstrap_components as dbc
 from dash.exceptions import PreventUpdate
+import dash_bootstrap_components as dbc
 
 from src import config
+from src.Dataset import Dataset
+
+# Add import for Plotly
+import plotly.graph_objects as go
 
 # Global cache for processed saliency images
 _saliency_image_cache = {}
 _current_pairs = []
-
-# Add import for Plotly
-import plotly.graph_objects as go
 
 def clear_saliency_cache():
     """Clear the saliency image cache to free memory."""
@@ -289,7 +290,7 @@ def update_saliency_display(saliency_data, current_index, cir_toggle_state, sali
         ]
         
     # Navigation info - only show rank
-    nav_info = f"Rank {rank}"
+    nav_info = html.Span(f"Rank {rank}", className="badge bg-primary", style={"fontSize": "0.75rem"})
     
     # Navigation buttons state
     prev_disabled = current_index <= 0
@@ -533,13 +534,15 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
     num_tokens = len(token_labels)
     max_token_length = max(len(token) for token in token_labels) if token_labels else 0
     
-    # Original heights (don't change these)
+    # Dynamic height calculation - use 100% of available container height
     if token_attr_fullscreen:
+        # In fullscreen mode, use a reasonable fixed height for better UX
         chart_height = 400
         base_bottom_margin = 100
         base_font_size = 12
     else:
-        chart_height = 130
+        # In normal mode, use 100% height - the container will handle the sizing
+        chart_height = None  # Will be set to 100% in graph style
         base_bottom_margin = 50
         base_font_size = 10
     
@@ -568,9 +571,9 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
         b=int(base_bottom_margin + extra_margin)
     )
 
-    # Update layout with calculated values (original width behavior)
+    # Update layout with calculated values
     fig.update_layout(
-        height=chart_height,
+        height=chart_height,  # None for dynamic height, fixed value for fullscreen
         margin=chart_margin,
         xaxis_tickangle=tick_angle,
         xaxis_title="Tokens",
@@ -592,21 +595,41 @@ def update_token_attribution_display(saliency_data, current_index, cir_toggle_st
         )
     )
 
-    # Original graph creation (no width manipulation)
+    # Dynamic graph creation - use 100% height for normal mode, fixed height for fullscreen
+    if token_attr_fullscreen:
+        graph_style = {'height': f'{chart_height}px', 'width': '100%'}
+    else:
+        graph_style = {'height': '100%', 'width': '100%'}
+    
     graph = dcc.Graph(
         figure=fig, 
         config={'displayModeBar': False}, 
-        style={'height': f'{chart_height}px', 'width': '100%'}
+        style=graph_style
     )
 
+    # Wrap graph in appropriate container based on mode
+    if token_attr_fullscreen:
+        graph_container = graph
+    else:
+        # Wrap graph in a container that fills available height
+        graph_container = html.Div(
+            graph,
+            style={
+                'height': '100%',
+                'width': '100%',
+                'display': 'flex',
+                'flexDirection': 'column'
+            }
+        )
+
     # Navigation info - show rank
-    nav_info = f"Rank {current_index + 1}"
+    nav_info = html.Span(f"Rank {current_index + 1}", className="badge bg-primary", style={"fontSize": "0.75rem"})
 
     # Navigation buttons state
     prev_dis = current_index <= 0
     next_dis = current_index >= len(candidate_attributions) - 1
 
-    return (graph, nav_info, prev_dis, next_dis)
+    return (graph_container, nav_info, prev_dis, next_dis)
 
 
 # ------------------------------------------------------------

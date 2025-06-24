@@ -489,8 +489,15 @@ def run_ui():
                                 ], className='d-flex align-items-center')
                             ),
                             dbc.CardBody([
-                                html.Div(id='token-attribution-content', style={'overflow': 'auto', 'flex': '1 1 auto', 'minHeight': 0})
-                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem'}),
+                                html.Div(id='token-attribution-content', style={
+                                    'overflow': 'auto', 
+                                    'flex': '1 1 auto', 
+                                    'minHeight': '0',
+                                    'height': '100%',
+                                    'display': 'flex',
+                                    'flexDirection': 'column'
+                                })
+                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem', 'height': '100%'}),
                         ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'height': '100%', 'maxHeight': '25%', 'overflow': 'auto'}),
 
                         dbc.Card([

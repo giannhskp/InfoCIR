@@ -1007,4 +1007,43 @@ html, body {
     height: auto;
     object-fit: contain;
     border-radius: var(--radius-sm);
+}
+
+/* Enhanced Token Attribution Chart */
+#token-attribution-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+#token-attribution-content .js-plotly-plot {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+#token-attribution-content .plotly-graph-div {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+/* Ensure the graph container fills available space */
+#token-attribution-content > div {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Token attribution card specific styling */
+#token-attr-card .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#token-attr-card .card-body > div {
+    flex: 1;
+    min-height: 0;
 } 
