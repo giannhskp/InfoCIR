@@ -282,8 +282,6 @@ def calculate_zoom_factor(layout, initial_range=None):
                 
                 if 'umap' in str(x_title).lower():
                     x_col, y_col = 'umap_x', 'umap_y'
-                elif 'tsne' in str(x_title).lower():
-                    x_col, y_col = 'tsne_x', 'tsne_y'
                 else:
                     # Default fallback ranges
                     initial_range = {'x': [-50, 50], 'y': [-50, 50]}
@@ -496,9 +494,7 @@ def create_scatterplot_figure(projection):
     """Create scatterplot figure based on projection type (using go.Scatter)."""
     df = Dataset.get()
 
-    if projection == 't-SNE':
-        x_col, y_col = 'tsne_x', 'tsne_y'
-    elif projection == 'UMAP':
+    if projection == 'UMAP':
         x_col, y_col = 'umap_x', 'umap_y'
     else:
         raise Exception('Projection not found')

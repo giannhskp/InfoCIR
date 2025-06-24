@@ -220,13 +220,13 @@ def update_rank_delta_matrix(enhanced_data, selected_idx, cir_toggle_state, sear
             html.I(className="fas fa-info-circle text-primary me-2", style={"fontSize": "0.8rem"}),
             html.Strong("Legend: ", style={"fontSize": "0.75rem"}),
             html.Span([
-                html.Span("−", className="badge bg-success bg-opacity-75 me-1", style={"fontSize": "0.6rem"}),
-                html.Span("moved up ", style={"fontSize": "0.7rem", "color": "#28a745"}),
-                html.Span("+", className="badge bg-danger bg-opacity-75 me-1", style={"fontSize": "0.6rem"}),
-                html.Span("moved down ", style={"fontSize": "0.7rem", "color": "#dc3545"}),
-                html.Span("=", className="badge bg-info bg-opacity-75 me-1", style={"fontSize": "0.6rem"}),
+                html.Span("−", className="badge bg-success me-1", style={"fontSize": "0.6rem"}),
+                html.Span("moved up ", style={"fontSize": "0.7rem"}),
+                html.Span("+", className="badge bg-danger me-1", style={"fontSize": "0.6rem"}),
+                html.Span("moved down ", style={"fontSize": "0.7rem"}),
+                html.Span("=", className="badge bg-info me-1", style={"fontSize": "0.6rem"}),
                 html.Span("same rank ", style={"fontSize": "0.7rem"}),
-                html.Span("out", className="badge bg-secondary bg-opacity-75", style={"fontSize": "0.6rem"}),
+                html.Span("out", className="badge bg-secondary", style={"fontSize": "0.6rem"}),
                 html.Span(" not in top-k", style={"fontSize": "0.7rem"})
             ])
         ], className="d-flex align-items-center flex-wrap justify-content-center")

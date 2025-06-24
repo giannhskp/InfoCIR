@@ -11,13 +11,12 @@ from src.widgets import scatterplot
      Output('histogram', 'figure', allow_duplicate=True),
      Output('selected-histogram-class', 'data', allow_duplicate=True),
      Output('selected-scatterplot-class', 'data', allow_duplicate=True)],
-    [State('projection-radio-buttons', 'value'),
-     State('scatterplot', 'figure'),
+    [State('scatterplot', 'figure'),
      State('cir-toggle-state', 'data')],
     Input('deselect-button', 'n_clicks'),
     prevent_initial_call=True,
 )
-def deselect_button_is_pressed(projection_selected, scatterplot_fig, cir_toggle_state, _):
+def deselect_button_is_pressed(scatterplot_fig, cir_toggle_state, _):
     """Handle deselect button clicks"""
     print('Deselect button is clicked')
 

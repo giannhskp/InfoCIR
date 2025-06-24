@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import pandas as pd
 import numpy as np
 from umap import UMAP
-from sklearn.manifold import TSNE
+
 from sklearn.decomposition import PCA, FastICA
 from sklearn.preprocessing import StandardScaler
 from sklearn.manifold import trustworthiness
@@ -93,19 +93,6 @@ def calculate_umap(clip_embeddings, n_components=2, metric='cosine'):
     umap_embeddings = umap_reducer.fit_transform(clip_embeddings)
     return umap_embeddings[:, 0], umap_embeddings[:, 1], umap_reducer
 # END ORIGINAL UMAP IMPLEMENTATION
-
-def calculate_tsne(clip_embeddings, n_components=2, metric='cosine'):
-    """Calculate t-SNE projection"""
-    print("Calculating t-SNE projection...")
-    tsne_reducer = TSNE(
-        n_components=n_components,
-        metric=metric,
-        random_state=42,
-        perplexity=30,
-        n_iter=1000
-    )
-    tsne_embeddings = tsne_reducer.fit_transform(clip_embeddings)
-    return tsne_embeddings[:, 0], tsne_embeddings[:, 1]
 
 # NEW ENHANCED UMAP IMPLEMENTATION
 
@@ -604,17 +591,10 @@ def generate_projection_data():
     umap_x *= scale
     umap_y *= scale
     
-    # t-SNE calculation DISABLED - skip to save time
-    print("t-SNE calculation DISABLED for faster processing")
-    tsne_x = np.zeros(len(clip_embeddings))  # Dummy values
-    tsne_y = np.zeros(len(clip_embeddings))  # Dummy values
-    
     # Create augmented dataset
     augmented_dataset = dataset_sample.assign(
         umap_x=umap_x, 
-        umap_y=umap_y, 
-        tsne_x=tsne_x, 
-        tsne_y=tsne_y
+        umap_y=umap_y
     )
     
     # Save augmented dataset

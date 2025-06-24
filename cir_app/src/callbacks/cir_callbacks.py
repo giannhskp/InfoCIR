@@ -25,6 +25,8 @@ from dash import no_update
 import copy
 import math
 import numpy as np
+from pathlib import Path
+from typing import List, Tuple, Dict, Optional
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -90,13 +92,13 @@ def update_search_button_state(text_prompt, upload_contents):
     [State('cir-upload-image', 'contents'),
      State('cir-text-prompt', 'value'),
      State('cir-top-n', 'value'),
-     State('custom-dropdown', 'value'),
      State('cir-toggle-state', 'data')],
     prevent_initial_call=True
 )
-def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model, current_toggle_state):
+def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, current_toggle_state):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     top_n = int(top_n)
+    selected_model = "SEARLE"  # Hardcoded model selection
     if not upload_contents or not text_prompt:
         from src.widgets import histogram
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
@@ -424,8 +426,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'umap_y_query': umap_y_query,
             'umap_x_final_query': umap_x_final_query,
             'umap_y_final_query': umap_y_final_query,
-            'tsne_x_query': None,
-            'tsne_y_query': None,
+
             'text_prompt': text_prompt,
             'top_n': top_n,
             'upload_contents': upload_contents,
@@ -647,6 +648,19 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     tmp.write(decoded)
     tmp.close()
 
+    # Extract class and style information from selected ideal images (if enabled)
+    context_info = ""
+    if config.ENHANCEMENT_USE_CONTEXT:
+        class_style_info = extract_class_and_style_info(selected_image_ids)
+        classes = class_style_info['classes']
+        styles = class_style_info['styles']
+        
+        # Build context information for the LLM
+        if classes:
+            context_info += f"The user has selected ideal images from these classes: {', '.join(classes)}. "
+        if styles:
+            context_info += f"The selected images represent these artistic styles: {', '.join(styles)}. "
+    
     # Prepare LLM for prompt enhancement using Mistral-7B-Instruct
     N = config.ENHANCEMENT_CANDIDATE_PROMPTS  # Number of candidate prompts to generate
     original_prompt = search_data['text_prompt']
@@ -654,6 +668,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     torch_dtype = torch.float16 if DEVICE == 'cuda' else torch.float32
     print(f"Loading enhancement model {MODEL_NAME} on {DEVICE}...")  # Debug log
+    print(f"Context enhancement enabled: {config.ENHANCEMENT_USE_CONTEXT}")  # Debug log
+    if config.ENHANCEMENT_USE_CONTEXT:
+        print(f"Context info: {context_info}")  # Debug log
     os.environ['HF_TOKEN'] = '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'
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForCausalLM.from_pretrained(
@@ -661,16 +678,33 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         torch_dtype=torch_dtype,
         device_map='auto'
     )
-    instruction = f"""
+    
+    # Enhanced instruction with class and style context
+    base_instruction = f"""
     You are an assistant helping improve short prompts for image retrieval. 
     Given a query like: "{original_prompt}", generate one short, reworded version 
     that retains the original meaning but adds slight variety or detail. 
     Do NOT describe scenes or characters. Just rephrase the original style-focused prompt.
-
-    Original prompt: "{original_prompt}"
-
-    Return only one short enhanced prompt enclosed inside <ANSWER> </ANSWER> tags.
     """
+    
+    if context_info:
+        instruction = f"""
+        {base_instruction}
+        
+        Additional context: {context_info}Use this information to make the enhanced prompt more relevant to these classes and styles while maintaining the original intent. Do not specifically mention any of the classes in the enhanced prompt.
+
+        Original prompt: "{original_prompt}"
+
+        Return only one short enhanced prompt enclosed inside <ANSWER> </ANSWER> tags.
+        """
+    else:
+        instruction = f"""
+        {base_instruction}
+
+        Original prompt: "{original_prompt}"
+
+        Return only one short enhanced prompt enclosed inside <ANSWER> </ANSWER> tags.
+        """
 
     formatted_prompt = f"<s>[INST] {instruction.strip()} [/INST]"
     inputs = tokenizer(formatted_prompt, return_tensors='pt').to(DEVICE)
@@ -1262,9 +1296,10 @@ def update_enhanced_prompt_view(n_clicks_list, enhanced_data):
      Output('prompt-selection', 'value')],
     [Input('cir-enhanced-prompts-data', 'data'),
      Input('prompt-enh-fullscreen', 'data')],
+    [State('prompt-selection', 'value')],
     prevent_initial_call=True
 )
-def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
+def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen, current_selected_idx):
     """Populate the prompt enhancement tab when new enhanced prompts are available"""
     if not enhanced_data:
         # Show informational message when no enhancement data is available
@@ -1289,11 +1324,16 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
     cards = []
     for i, (prompt, cov, mean_rank, mean_sim, ndcg, ap, mrr) in enumerate(zip(prompts, coverages, mean_ranks, mean_sims, ndcgs, aps, mrrs)):
         is_best = (i == best_idx)
+        is_selected = (i == current_selected_idx)
         
-        # Card classes and styling
+        # Card classes and styling - DO NOT apply 'selected' class directly
+        # Let the CSS class management callbacks handle it dynamically
         card_classes = "prompt-enhancement-card"
         if is_best:
             card_classes += " best-prompt"
+        # Remove this line that was causing the issue:
+        # if is_selected:
+        #     card_classes += " selected"
         
         icon_class = "fas fa-crown text-warning" if is_best else "fas fa-magic text-info"
         title_text = "Best" if is_best else f"#{i+1}"
@@ -1304,7 +1344,7 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
         mean_sim_badge = html.Span(f"{mean_sim:.4f}", className="prompt-metric-badge bg-success text-white")
         ndcg_badge = html.Span(f"{ndcg:.4f}", className="prompt-metric-badge bg-info text-white")
         ap_badge = html.Span(f"{ap:.4f}", className="prompt-metric-badge bg-warning text-white")
-        mrr_badge = html.Span(f"{mrr:.4f}", className="prompt-metric-badge bg-danger text-white")
+        mrr_badge = html.Span(f"{mrr:.4f}", className="prompt-metric-badge bg-dark text-white")
         
         # ----------------------------------------------------------------
         # Build metric badge row – show ALL metrics when fullscreen else
@@ -1335,12 +1375,10 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
                 dbc.CardBody([
                     # Header with title and metrics on same line
                     html.Div([
-                        html.Div([
-                            html.I(className=f"{icon_class} prompt-card-icon"),
-                            html.Span(title_text, className="prompt-card-title")
-                        ], style={'display': 'flex', 'alignItems': 'center'}),
-                        html.Div(metric_children, className="prompt-card-metrics")
-                    ], className="prompt-card-header"),
+                        html.I(className=f"{icon_class} prompt-card-icon"),
+                        html.Span(title_text, className="prompt-card-title", style={'marginRight': '0.5rem'}),
+                        html.Div(metric_children, className="prompt-card-metrics", style={'display': 'inline-flex', 'alignItems': 'center'})
+                    ], className="prompt-card-header", style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap'}),
                     
                     # Prompt text with improved styling
                     html.P(
@@ -1363,19 +1401,20 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
         html.Div(cards, className="prompt-cards-container")
     ]
     
-    return content, all_options, None  # Default to no selection (original CIR)
+    return content, all_options, current_selected_idx
 
 # Callback to handle prompt card clicks and update selection
 @callback(
     [Output('prompt-selection', 'value', allow_duplicate=True),
-     Output({'type': 'prompt-card', 'index': ALL}, 'style')],
+     Output({'type': 'prompt-card', 'index': ALL}, 'className')], # Removed style output
     Input({'type': 'prompt-card', 'index': ALL}, 'n_clicks'),
     [State('prompt-selection', 'value'),
      State('cir-enhanced-prompts-data', 'data'),
-     State('viz-mode', 'data')],
+     State('viz-mode', 'data'),
+     State({'type': 'prompt-card', 'index': ALL}, 'className')],
     prevent_initial_call=True
 )
-def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, viz_mode):
+def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, viz_mode, current_classnames):
     """Handle card clicks for prompt selection"""
     if not any(n_clicks_list) or not enhanced_data:
         raise PreventUpdate
@@ -1402,86 +1441,24 @@ def handle_prompt_card_selection(n_clicks_list, current_value, enhanced_data, vi
     else:
         new_selected = clicked_index
     
-    prompts = enhanced_data.get('prompts', [])
-    coverages = enhanced_data.get('coverages', [])
-    mean_ranks = enhanced_data.get('mean_ranks', [])
-    best_idx = enhanced_data.get('best_idx')
-    card_styles = []
-    # Enhanced prompt cards styling with inline styles for selection states
-    for i in range(len(prompts)):
+    prompts = enhanced_data.get('prompts', []) # Need prompts to iterate correctly
+    best_idx = enhanced_data.get('best_idx') # Need best_idx for class names
+    new_classnames = [] # This will hold the new class strings
+
+    # Loop through all prompt cards to determine their new class names
+    for i in range(len(prompts)): # Iterate through all possible indices
         is_best = (i == best_idx)
         is_selected = (i == new_selected)
         
-        # Base style (the CSS classes handle most styling)
-        style = {}
-        
-        # Add selection-specific inline styles to complement CSS
+        # --- Determine new class names ---
+        class_parts = ["prompt-enhancement-card"] # Start with base class
+        if is_best:
+            class_parts.append("best-prompt")
         if is_selected:
-            if is_best:
-                style.update({
-                    'transform': 'translateY(-3px)',
-                    'boxShadow': '0 8px 20px rgba(40, 167, 69, 0.5)',
-                    'borderWidth': '3px'
-                })
-            else:
-                style.update({
-                    'transform': 'translateY(-3px)', 
-                    'boxShadow': '0 8px 20px rgba(13, 202, 240, 0.5)',
-                    'borderWidth': '3px'
-                })
-        
-        card_styles.append(style)
-    return new_selected, card_styles
+            class_parts.append("selected")
+        new_classnames.append(" ".join(class_parts))
 
-# Callback to update card styles when prompt-selection changes from external sources
-@callback(
-    Output({'type': 'prompt-card', 'index': ALL}, 'style', allow_duplicate=True),
-    Input('prompt-selection', 'value'),
-    State('cir-enhanced-prompts-data', 'data'),
-    State('viz-mode', 'data'),
-    prevent_initial_call=True
-)
-def update_prompt_card_styles_on_external_change(selected_idx, enhanced_data, viz_mode):
-    """Update card styles when prompt-selection changes from external sources (like deselect button)"""
-    if not enhanced_data:
-        raise PreventUpdate
-    
-    # If visualization mode is ON, ignore prompt-enhancement selection logic
-    if viz_mode:
-        raise PreventUpdate
-
-    prompts = enhanced_data.get('prompts', [])
-    coverages = enhanced_data.get('coverages', [])
-    mean_ranks = enhanced_data.get('mean_ranks', [])
-    best_idx = enhanced_data.get('best_idx')
-    card_styles = []
-    
-    # Enhanced prompt cards styling with inline styles for selection states
-    for i in range(len(prompts)):
-        is_best = (i == best_idx)
-        is_selected = (i == selected_idx)
-        
-        # Base style (the CSS classes handle most styling)
-        style = {}
-        
-        # Add selection-specific inline styles to complement CSS
-        if is_selected:
-            if is_best:
-                style.update({
-                    'transform': 'translateY(-3px)',
-                    'boxShadow': '0 8px 20px rgba(40, 167, 69, 0.5)',
-                    'borderWidth': '3px'
-                })
-            else:
-                style.update({
-                    'transform': 'translateY(-3px)', 
-                    'boxShadow': '0 8px 20px rgba(13, 202, 240, 0.5)',
-                    'borderWidth': '3px'
-                })
-        
-        card_styles.append(style)
-    
-    return card_styles
+    return new_selected, new_classnames
 
 # Callback to update all widgets when an enhanced prompt is selected
 @callback(
@@ -1509,7 +1486,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     xq = search_data.get('umap_x_query'); yq = search_data.get('umap_y_query')
     xfq = yfq = None
     if axis_title != 'umap_x':
-        xq = search_data.get('tsne_x_query'); yq = search_data.get('tsne_y_query')
+        xq, yq = None, None
     # Handle original revert
     if selected_idx == -1:
         topk_ids = search_data.get('topk_ids', [])
@@ -1554,35 +1531,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     hist = histogram.draw_histogram(cir_df)
     return gal, wc, hist, None, []
 
-@callback(
-    Output('model-change-flag', 'children'),
-    Output('cir-results', 'children', allow_duplicate=True),
-    Output('cir-toggle-button', 'children', allow_duplicate=True),
-    Output('cir-toggle-button', 'color', allow_duplicate=True),
-    Output('cir-toggle-button', 'style', allow_duplicate=True),
-    Output('cir-toggle-button', 'disabled', allow_duplicate=True),
-    Output('cir-toggle-state', 'data', allow_duplicate=True),
-    Output('viz-mode', 'data', allow_duplicate=True),
-    Output('cir-selected-image-ids', 'data', allow_duplicate=True),
-    Output('viz-selected-ids', 'data', allow_duplicate=True),
-    Output('cir-run-button', 'style', allow_duplicate=True),
-    Input('custom-dropdown', 'value'),
-    prevent_initial_call=True
-)
-def clear_results_on_model_change(_):
-    return (
-        "changed",
-        html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"),
-        'Visualize CIR results',
-        'success',
-        no_update,
-        True,   # keep disabled as there are no results
-        False,  # Reset viz-mode toggle state
-        False,  # Reset viz-mode to OFF
-        [],     # Clear cir-selected-image-ids
-        [],     # Clear viz-selected-ids
-        {'display': 'none'},  # cir-run-button style – hidden
-    )
+
 
 # -----------------------------------------------------------------------------
 # Helper – Re-use card–building logic for Query Results so it can be invoked by
@@ -2023,3 +1972,117 @@ def show_cir_search_loading(n_clicks):
         dbc.Spinner(color="primary", type="border", size="lg", spinnerClassName="mb-3"),
         html.Span("Retrieving images…", className="text-muted fw-semibold")
     ], className="d-flex flex-column align-items-center justify-content-center p-4")
+
+# Callback to apply selected class after UI rebuild (e.g., during fullscreen toggle)
+@callback(
+    Output({'type': 'prompt-card', 'index': ALL}, 'className', allow_duplicate=True),
+    [Input('prompt-enh-fullscreen', 'data'),
+     Input('cir-enhanced-prompts-data', 'data')],
+    [State('prompt-selection', 'value'),
+     State({'type': 'prompt-card', 'index': ALL}, 'className')],
+    prevent_initial_call=True
+)
+def apply_selected_class_after_rebuild(is_fullscreen, enhanced_data, current_selected_idx, current_classnames):
+    """Apply the selected class to the appropriate prompt card after UI rebuild (e.g., fullscreen toggle)"""
+    if not enhanced_data or current_selected_idx is None:
+        raise PreventUpdate
+    
+    prompts = enhanced_data.get('prompts', [])
+    best_idx = enhanced_data.get('best_idx')
+    
+    # Build the correct class names for all cards
+    new_classnames = []
+    for i in range(len(prompts)):
+        is_best = (i == best_idx)
+        is_selected = (i == current_selected_idx and current_selected_idx >= 0)
+        
+        class_parts = ["prompt-enhancement-card"]
+        if is_best:
+            class_parts.append("best-prompt")
+        if is_selected:
+            class_parts.append("selected")
+        new_classnames.append(" ".join(class_parts))
+    
+    return new_classnames
+
+# Callback to clear prompt card selection when deselect button is pressed
+@callback(
+    Output({'type': 'prompt-card', 'index': ALL}, 'className', allow_duplicate=True),
+    Input('prompt-selection', 'value'),
+    [State('cir-enhanced-prompts-data', 'data'),
+     State({'type': 'prompt-card', 'index': ALL}, 'className')],
+    prevent_initial_call=True
+)
+def clear_prompt_selection_on_deselect(selected_idx, enhanced_data, current_classnames):
+    """Clear prompt card selection when prompt-selection becomes -1 (deselected)"""
+    if not enhanced_data or selected_idx != -1:
+        raise PreventUpdate
+    
+    prompts = enhanced_data.get('prompts', [])
+    best_idx = enhanced_data.get('best_idx')
+    
+    # Build class names without any selection
+    new_classnames = []
+    for i in range(len(prompts)):
+        is_best = (i == best_idx)
+        
+        class_parts = ["prompt-enhancement-card"]
+        if is_best:
+            class_parts.append("best-prompt")
+        # No "selected" class since we're deselecting
+        new_classnames.append(" ".join(class_parts))
+    
+    return new_classnames
+
+def extract_class_and_style_info(selected_image_ids: List[str]) -> Dict[str, List[str]]:
+    """
+    Extract class and style information from selected image IDs.
+    
+    Args:
+        selected_image_ids: List of image IDs in string format
+        
+    Returns:
+        Dictionary with 'classes' and 'styles' lists
+    """
+    df = Dataset.get()
+    classes = []
+    styles = []
+    
+    for image_id in selected_image_ids:
+        try:
+            # Convert to integer if it's a string representation of an integer
+            if isinstance(image_id, str) and image_id.isdigit():
+                image_id = int(image_id)
+            
+            # Get the image information from the dataset
+            if image_id in df.index:
+                row = df.loc[image_id]
+                
+                # Extract class name
+                class_name = row['class_name']
+                classes.append(class_name)
+                
+                # Extract style from filename (format: style_number.jpg)
+                image_path = row['image_path']
+                filename = os.path.basename(image_path)
+                # Remove file extension and extract style (first part before underscore)
+                base_name = os.path.splitext(filename)[0]
+                if '_' in base_name:
+                    style = base_name.split('_')[0]
+                    styles.append(style)
+                else:
+                    # If no underscore, use the whole base name as style
+                    styles.append(base_name)
+                    
+        except Exception as e:
+            print(f"Warning: Could not extract info for image ID {image_id}: {e}")
+            continue
+    
+    # Remove duplicates while preserving order
+    unique_classes = list(dict.fromkeys(classes))
+    unique_styles = list(dict.fromkeys(styles))
+    
+    return {
+        'classes': unique_classes,
+        'styles': unique_styles
+    }

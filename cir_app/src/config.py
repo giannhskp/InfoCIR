@@ -16,10 +16,9 @@ SELECTED_IMAGE_COLOR = 'green'  # Color for the specifically selected image
 SELECTED_CLASS_COLOR = 'red'    # Color for other images of the same class as selected image
 
 MAX_IMAGES_ON_SCATTERPLOT = 100
-DEFAULT_PROJECTION = 'UMAP'
 
 # Server configuration
-PORT = 8052  # Port number for the Dash application
+PORT = 8051  # Port number for the Dash application
 
 # Dataset configuration
 DATASET_SAMPLE_SIZE = 30000  # Sample size from dataset
@@ -48,14 +47,14 @@ NEW_UMAP_CONFIG = {
   
     'force_approximation_algorithm': False,  # Force UMAP approximation algorithm
     'enhanced_parameter_tuning': True,  # Apply enhanced parameter tuning for semantic clustering
-    'calculate_quality_metrics': True,  # Calculate comprehensive quality metrics
+    'calculate_quality_metrics': False,  # Calculate comprehensive quality metrics
     'use_hdbscan': False,  # Apply HDBSCAN clustering post-processing
     'hdbscan_min_cluster_size': 10,  # Minimum cluster size for HDBSCAN
 }
 
 # Path configuration
 # You should set DATASET_ROOT_PATH to point to your actual dataset directory
-DATASET_ROOT_PATH = '/home/scur1151/multimedia-analytics/imagenet-r'
+DATASET_ROOT_PATH = '/home/ikapetan/Frameworks/Projects-Master/MMA/data/imagenet-r'
 
 # Working directory for processed data (relative to cir_app/)
 APP_DIR = Path(__file__).parent.parent  # cir_app/
@@ -74,6 +73,7 @@ CLIP_MODEL_NAME = 'ViT-B/32'  # CLIP model to use for image retrieval
 
 # Prompt enhancement configuration
 ENHANCEMENT_CANDIDATE_PROMPTS = 10  # Number of candidate prompts to generate for enhancement
+ENHANCEMENT_USE_CONTEXT = True      # Whether to include class and style info from selected ideal images in prompt enhancement
 
 # SEARLE CIR configuration
 CIR_DATASET_PATH = AUGMENTED_DATASET_PATH  # Path to CIR augmented dataset CSV

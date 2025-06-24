@@ -17,7 +17,6 @@ import plotly.graph_objects as go
         Input('scatterplot', 'selectedData'),
         Input('scatterplot', 'relayoutData'),
         Input('scatterplot', 'clickData'),
-        Input('projection-radio-buttons', 'value'),
         Input('deselect-button', 'n_clicks'),
         Input({'type': 'gallery-card', 'index': ALL}, 'n_clicks'),
         Input('wordcloud', 'click'),
@@ -38,7 +37,7 @@ import plotly.graph_objects as go
     prevent_initial_call=True,
 )
 def unified_scatterplot_controller(
-    cir_toggle_state, selectedData, relayoutData, clickData, projection_value, deselect_clicks,
+    cir_toggle_state, selectedData, relayoutData, clickData, deselect_clicks,
     gallery_clicks, wordcloud_click, selected_scatterplot_class, prompt_selection, viz_mode, viz_selected_ids,
     scatterplot_fig, search_data, selected_gallery_image_ids, selected_image_data, 
     enhanced_prompts_data, selected_histogram_class
@@ -68,20 +67,9 @@ def unified_scatterplot_controller(
             print(f"WARNING: This suggests a race condition where CIR traces were lost")
     
     # -------------------------------------------------------------------------
-    # 1. PROJECTION CHANGE - Rebuild entire figure from scratch
+    # 1. DESELECT BUTTON - Clear selections but preserve CIR traces if active
     # -------------------------------------------------------------------------
-    if trigger_id == 'projection-radio-buttons':
-        print("Rebuilding scatterplot for projection change")
-        new_fig = scatterplot.create_scatterplot_figure(projection_value)
-        # Preserve layout if we had one
-        if scatterplot_fig and 'layout' in scatterplot_fig:
-            new_fig['layout'].update(scatterplot_fig['layout'])
-        return new_fig
-    
-    # -------------------------------------------------------------------------
-    # 2. DESELECT BUTTON - Clear selections but preserve CIR traces if active
-    # -------------------------------------------------------------------------
-    elif trigger_id == 'deselect-button':
+    if trigger_id == 'deselect-button':
         print("Handling deselect button")
         import copy
         new_fig = copy.deepcopy(scatterplot_fig)
@@ -123,7 +111,7 @@ def unified_scatterplot_controller(
         return new_fig
     
     # -------------------------------------------------------------------------
-    # 3. CIR TOGGLE STATE CHANGE - Add/remove result traces
+    # 2. CIR TOGGLE STATE CHANGE - Add/remove result traces
     # -------------------------------------------------------------------------
     elif trigger_id == 'cir-toggle-state':
         print(f"Handling CIR toggle: {cir_toggle_state}")
@@ -189,8 +177,8 @@ def unified_scatterplot_controller(
                 xq, yq = search_data.get('umap_x_query'), search_data.get('umap_y_query')
                 xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
             else:
-                xq, yq = search_data.get('tsne_x_query'), search_data.get('tsne_y_query')
-                xfq, yfq = None, None  # Final query only for UMAP
+                xq, yq = None, None
+                xfq, yfq = None, None
             
             # Find coordinates for Top-K and Top-1
             x1, y1, xk, yk = [], [], [], []
@@ -742,8 +730,8 @@ def unified_scatterplot_controller(
                     # Use original Final Query coordinates
                     xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
             else:
-                xq, yq = search_data.get('tsne_x_query'), search_data.get('tsne_y_query')
-                xfq, yfq = None, None  # Final query only for UMAP
+                xq, yq = None, None
+                xfq, yfq = None, None
             
             # Find coordinates for Top-K and Top-1
             x1, y1, xk, yk = [], [], [], []

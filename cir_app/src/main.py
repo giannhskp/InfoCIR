@@ -2,7 +2,6 @@ from dash import Dash, html, dcc
 from src import config
 from src.Dataset import Dataset
 from src.widgets import (
-    projection_radio_buttons, 
     gallery, 
     scatterplot, 
     wordcloud, 
@@ -13,7 +12,6 @@ import dash_bootstrap_components as dbc
 
 # Import callbacks
 import src.callbacks.scatterplot
-import src.callbacks.projection_radio_buttons
 import src.callbacks.wordcloud
 import src.callbacks.histogram
 import src.callbacks.gallery
@@ -28,14 +26,102 @@ def run_ui():
     """Run the Dash UI application"""
     external_stylesheets = [
         dbc.themes.BOOTSTRAP,
-        "https://use.fontawesome.com/releases/v5.15.4/css/all.css"
+        "https://use.fontawesome.com/releases/v5.15.4/css/all.css",
+        "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"  # Add Inter font
     ]
-    app = Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
+    
+    # Initialize Dash app with enhanced styling support
+    app = Dash(
+        __name__, 
+        external_stylesheets=external_stylesheets, 
+        suppress_callback_exceptions=True,
+        assets_folder='assets',  # Ensure assets folder is recognized
+        title="Enhanced CIR Application"  # Set page title
+    )
+    
+    # Add custom CSS and JavaScript via meta tags for immediate loading
+    app.index_string = '''
+    <!DOCTYPE html>
+    <html>
+        <head>
+            {%metas%}
+            <title>Enhanced CIR Application</title>
+            {%favicon%}
+            {%css%}
+            <style>
+                /* Preload animations for smooth startup */
+                .preload * {
+                    -webkit-transition: none !important;
+                    -moz-transition: none !important;
+                    -ms-transition: none !important;
+                    -o-transition: none !important;
+                    transition: none !important;
+                }
+                
+                /* Loading overlay */
+                .app-loading {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    z-index: 9999;
+                    color: white;
+                    font-family: 'Inter', sans-serif;
+                }
+                
+                .loading-spinner {
+                    width: 50px;
+                    height: 50px;
+                    border: 3px solid rgba(255, 255, 255, 0.3);
+                    border-radius: 50%;
+                    border-top-color: white;
+                    animation: spin 1s ease-in-out infinite;
+                }
+                
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+            </style>
+        </head>
+        <body class="preload">
+            <div class="app-loading" id="loading-overlay">
+                <div class="text-center">
+                    <div class="loading-spinner mx-auto mb-3"></div>
+                    <h4 class="mb-2">Enhanced CIR Application</h4>
+                    <p class="mb-0">Loading beautiful interface...</p>
+                </div>
+            </div>
+            {%app_entry%}
+            <footer>
+                {%config%}
+                {%scripts%}
+                <script>
+                    // Remove preload class and loading overlay after app loads
+                    document.addEventListener('DOMContentLoaded', function() {
+                        setTimeout(function() {
+                            document.body.classList.remove('preload');
+                            const overlay = document.getElementById('loading-overlay');
+                            if (overlay) {
+                                overlay.style.opacity = '0';
+                                setTimeout(() => overlay.remove(), 300);
+                            }
+                        }, 1000);
+                    });
+                </script>
+                {%renderer%}
+            </footer>
+        </body>
+    </html>
+    '''
     
     # Create widgets
     help_popup_widget = help_popup.create_help_popup()
-    projection_radio_buttons_widget = projection_radio_buttons.create_projection_radio_buttons()
-    scatterplot_widget = scatterplot.create_scatterplot(config.DEFAULT_PROJECTION)
+    scatterplot_widget = scatterplot.create_scatterplot('UMAP')
     wordcloud_widget = wordcloud.create_wordcloud()
     gallery_widget = gallery.create_gallery()
     histogram_widget = histogram.create_histogram()
@@ -178,10 +264,7 @@ def run_ui():
             dbc.Input(id='cir-text-prompt', placeholder="prompt", type="text", size='sm', className="mb-2", style={'fontSize':'0.7rem'}),
 
             html.Label("Top-N Results:", className="form-label fw-bold small"),
-            dbc.Select(id='cir-top-n', options=[{"label": f"{n} images", "value": n} for n in (5,10,20)], value=10, size='sm', className="mb-2"),
-
-            html.Label("Model:", className="form-label fw-bold small"),
-            dbc.Select(id='custom-dropdown', options=[{"label": "SEARLE", "value": "SEARLE"}, {"label": "freedom", "value": "freedom"}], value="SEARLE", size='sm', className="mb-3"),
+            dbc.Select(id='cir-top-n', options=[{"label": f"{n} images", "value": n} for n in (5,10,20)], value=10, size='sm', className="mb-3"),
 
             dbc.Button("Start", id='cir-search-button', color="primary", size='sm', className="w-100 mb-2", disabled=True, style={'fontSize':'0.7rem'}),
             html.Div(id='cir-search-status', className="small status-indicator mb-2"),
@@ -266,38 +349,43 @@ def run_ui():
     app.layout = html.Div(
         dbc.Container([
             help_popup_widget,
-            html.Div(id='model-change-flag', style={'display': 'none'}),
-            dbc.Stack([
-                projection_radio_buttons_widget,
-                html.Div([
-                    # Hidden placeholder for legacy callbacks – kept for ID consistency
-                    html.A(
-                        dbc.Button('Run CIR',
-                                   id='cir-run-button',
-                                   color='info',
-                                   class_name='header-button',
-                                   style={'display': 'none'}),
-                        href='#cir-interface',
-                        style={'textDecoration': 'none', 'display': 'none'}
-                    ),
-                    # Visualize button is always visible but starts disabled until results are available
-                    dbc.Button('Visualize CIR results', 
-                               id='cir-toggle-button',
-                               color="success",
-                               class_name="header-button",
-                               disabled=True,
-                               style={'display': 'block', 'color': 'black'}),
-                    dbc.Button('Deselect everything', 
-                               id='deselect-button', 
-                               class_name="btn btn-outline-primary header-button"),
-                    dbc.Button('Help', 
-                               id='help-button', 
-                               class_name="btn btn-outline-primary header-button")
-                ], className='ms-auto d-flex gap-2 align-items-center'),
-            ], id='header', direction="horizontal"),
             dbc.Row([
                 dbc.Col(left_column, width=3, className='main-col'),
-                dbc.Col(scatterplot_widget, width=6, className='main-col'),
+                dbc.Col([
+                    # Controls panel above scatterplot
+                    html.Div([
+                        # Hidden placeholder for legacy callbacks – kept for ID consistency
+                        html.A(
+                            dbc.Button('Run CIR',
+                                       id='cir-run-button',
+                                       color='info',
+                                       class_name='header-button',
+                                       style={'display': 'none'}),
+                            href='#cir-interface',
+                            style={'textDecoration': 'none', 'display': 'none'}
+                        ),
+                        # Visualize button is always visible but starts disabled until results are available
+                        dbc.Button('Visualize CIR results', 
+                                   id='cir-toggle-button',
+                                   color="success",
+                                   class_name="header-button",
+                                   disabled=True,
+                                   style={'display': 'block', 'color': 'black'}),
+                        dbc.Button('Deselect everything', 
+                                   id='deselect-button', 
+                                   class_name="btn btn-outline-primary header-button",
+                                   style={'color': 'white'}),
+                        dbc.Button('Help', 
+                                   id='help-button', 
+                                   class_name="btn btn-outline-primary header-button",
+                                   style={'color': 'white'})
+                    ], className='d-flex justify-content-center gap-2 align-items-center p-2', 
+                       style={'border': '1px solid #dee2e6', 'borderRadius': '0.375rem', 'backgroundColor': '#f8f9fa', 'marginBottom': '5px', 'flexShrink': '0'}),
+                    # Scatterplot container with proper height constraints
+                    html.Div([
+                        scatterplot_widget
+                    ], style={'flex': '1 1 auto', 'height': '0', 'overflow': 'hidden'})
+                ], width=6, className='main-col', style={'display': 'flex', 'flexDirection': 'column', 'height': '100%'}),
                 dbc.Col(
                     # RIGHT COLUMN STACKED COMPONENTS (no tabs)
                     html.Div([
@@ -401,8 +489,15 @@ def run_ui():
                                 ], className='d-flex align-items-center')
                             ),
                             dbc.CardBody([
-                                html.Div(id='token-attribution-content', style={'overflow': 'auto', 'flex': '1 1 auto', 'minHeight': 0})
-                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem'}),
+                                html.Div(id='token-attribution-content', style={
+                                    'overflow': 'auto', 
+                                    'flex': '1 1 auto', 
+                                    'minHeight': '0',
+                                    'height': '100%',
+                                    'display': 'flex',
+                                    'flexDirection': 'column'
+                                })
+                            ], style={'display': 'flex', 'flexDirection': 'column', 'padding': '0.5rem', 'height': '100%'}),
                         ], id='token-attr-card', className='border-widget mt-2', style={'flex':'1 1 25%', 'display': 'flex', 'flexDirection': 'column', 'height': '100%', 'maxHeight': '25%', 'overflow': 'auto'}),
 
                         dbc.Card([
