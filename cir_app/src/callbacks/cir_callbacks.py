@@ -1303,7 +1303,7 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
         mean_sim_badge = html.Span(f"{mean_sim:.4f}", className="prompt-metric-badge bg-success text-white")
         ndcg_badge = html.Span(f"{ndcg:.4f}", className="prompt-metric-badge bg-info text-white")
         ap_badge = html.Span(f"{ap:.4f}", className="prompt-metric-badge bg-warning text-white")
-        mrr_badge = html.Span(f"{mrr:.4f}", className="prompt-metric-badge bg-danger text-white")
+        mrr_badge = html.Span(f"{mrr:.4f}", className="prompt-metric-badge bg-dark text-white")
         
         # ----------------------------------------------------------------
         # Build metric badge row – show ALL metrics when fullscreen else
@@ -1334,12 +1334,10 @@ def populate_prompt_enhancement_tab(enhanced_data, is_fullscreen):
                 dbc.CardBody([
                     # Header with title and metrics on same line
                     html.Div([
-                        html.Div([
-                            html.I(className=f"{icon_class} prompt-card-icon"),
-                            html.Span(title_text, className="prompt-card-title")
-                        ], style={'display': 'flex', 'alignItems': 'center'}),
-                        html.Div(metric_children, className="prompt-card-metrics")
-                    ], className="prompt-card-header"),
+                        html.I(className=f"{icon_class} prompt-card-icon"),
+                        html.Span(title_text, className="prompt-card-title", style={'marginRight': '0.5rem'}),
+                        html.Div(metric_children, className="prompt-card-metrics", style={'display': 'inline-flex', 'alignItems': 'center'})
+                    ], className="prompt-card-header", style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap'}),
                     
                     # Prompt text with improved styling
                     html.P(

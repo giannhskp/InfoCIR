@@ -16,7 +16,6 @@ SELECTED_IMAGE_COLOR = 'green'  # Color for the specifically selected image
 SELECTED_CLASS_COLOR = 'red'    # Color for other images of the same class as selected image
 
 MAX_IMAGES_ON_SCATTERPLOT = 100
-DEFAULT_PROJECTION = 'UMAP'
 
 # Server configuration
 PORT = 8052  # Port number for the Dash application
@@ -55,7 +54,7 @@ NEW_UMAP_CONFIG = {
 
 # Path configuration
 # You should set DATASET_ROOT_PATH to point to your actual dataset directory
-DATASET_ROOT_PATH = '/home/scur1151/multimedia-analytics/imagenet-r'
+DATASET_ROOT_PATH = '/home/ikapetan/Frameworks/Projects-Master/MMA/data/imagenet-r'
 
 # Working directory for processed data (relative to cir_app/)
 APP_DIR = Path(__file__).parent.parent  # cir_app/

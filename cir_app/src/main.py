@@ -26,9 +26,98 @@ def run_ui():
     """Run the Dash UI application"""
     external_stylesheets = [
         dbc.themes.BOOTSTRAP,
-        "https://use.fontawesome.com/releases/v5.15.4/css/all.css"
+        "https://use.fontawesome.com/releases/v5.15.4/css/all.css",
+        "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"  # Add Inter font
     ]
-    app = Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
+    
+    # Initialize Dash app with enhanced styling support
+    app = Dash(
+        __name__, 
+        external_stylesheets=external_stylesheets, 
+        suppress_callback_exceptions=True,
+        assets_folder='assets',  # Ensure assets folder is recognized
+        title="Enhanced CIR Application"  # Set page title
+    )
+    
+    # Add custom CSS and JavaScript via meta tags for immediate loading
+    app.index_string = '''
+    <!DOCTYPE html>
+    <html>
+        <head>
+            {%metas%}
+            <title>Enhanced CIR Application</title>
+            {%favicon%}
+            {%css%}
+            <style>
+                /* Preload animations for smooth startup */
+                .preload * {
+                    -webkit-transition: none !important;
+                    -moz-transition: none !important;
+                    -ms-transition: none !important;
+                    -o-transition: none !important;
+                    transition: none !important;
+                }
+                
+                /* Loading overlay */
+                .app-loading {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    z-index: 9999;
+                    color: white;
+                    font-family: 'Inter', sans-serif;
+                }
+                
+                .loading-spinner {
+                    width: 50px;
+                    height: 50px;
+                    border: 3px solid rgba(255, 255, 255, 0.3);
+                    border-radius: 50%;
+                    border-top-color: white;
+                    animation: spin 1s ease-in-out infinite;
+                }
+                
+                @keyframes spin {
+                    to { transform: rotate(360deg); }
+                }
+            </style>
+        </head>
+        <body class="preload">
+            <div class="app-loading" id="loading-overlay">
+                <div class="text-center">
+                    <div class="loading-spinner mx-auto mb-3"></div>
+                    <h4 class="mb-2">Enhanced CIR Application</h4>
+                    <p class="mb-0">Loading beautiful interface...</p>
+                </div>
+            </div>
+            {%app_entry%}
+            <footer>
+                {%config%}
+                {%scripts%}
+                <script>
+                    // Remove preload class and loading overlay after app loads
+                    document.addEventListener('DOMContentLoaded', function() {
+                        setTimeout(function() {
+                            document.body.classList.remove('preload');
+                            const overlay = document.getElementById('loading-overlay');
+                            if (overlay) {
+                                overlay.style.opacity = '0';
+                                setTimeout(() => overlay.remove(), 300);
+                            }
+                        }, 1000);
+                    });
+                </script>
+                {%renderer%}
+            </footer>
+        </body>
+    </html>
+    '''
     
     # Create widgets
     help_popup_widget = help_popup.create_help_popup()
@@ -284,10 +373,12 @@ def run_ui():
                                    style={'display': 'block', 'color': 'black'}),
                         dbc.Button('Deselect everything', 
                                    id='deselect-button', 
-                                   class_name="btn btn-outline-primary header-button"),
+                                   class_name="btn btn-outline-primary header-button",
+                                   style={'color': 'white'}),
                         dbc.Button('Help', 
                                    id='help-button', 
-                                   class_name="btn btn-outline-primary header-button")
+                                   class_name="btn btn-outline-primary header-button",
+                                   style={'color': 'white'})
                     ], className='d-flex justify-content-center gap-2 align-items-center p-2', 
                        style={'border': '1px solid #dee2e6', 'borderRadius': '0.375rem', 'backgroundColor': '#f8f9fa', 'marginBottom': '5px', 'flexShrink': '0'}),
                     # Scatterplot container with proper height constraints
