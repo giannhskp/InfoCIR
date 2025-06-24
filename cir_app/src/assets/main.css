@@ -691,6 +691,21 @@ html, body {
     border: none;
     box-shadow: var(--shadow-xl);
     backdrop-filter: blur(20px);
+    /* Disable animations to prevent blinking */
+    animation: none !important;
+    transition: none !important;
+}
+
+.modal {
+    /* Disable modal backdrop animations */
+    animation: none !important;
+    transition: none !important;
+}
+
+.modal-dialog {
+    /* Disable modal dialog animations */
+    animation: none !important;
+    transition: none !important;
 }
 
 .modal-header {
