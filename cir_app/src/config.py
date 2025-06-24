@@ -73,6 +73,7 @@ CLIP_MODEL_NAME = 'ViT-B/32'  # CLIP model to use for image retrieval
 
 # Prompt enhancement configuration
 ENHANCEMENT_CANDIDATE_PROMPTS = 10  # Number of candidate prompts to generate for enhancement
+ENHANCEMENT_USE_CONTEXT = True      # Whether to include class and style info from selected ideal images in prompt enhancement
 
 # SEARLE CIR configuration
 CIR_DATASET_PATH = AUGMENTED_DATASET_PATH  # Path to CIR augmented dataset CSV

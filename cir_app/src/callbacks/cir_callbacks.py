@@ -25,6 +25,8 @@ from dash import no_update
 import copy
 import math
 import numpy as np
+from pathlib import Path
+from typing import List, Tuple, Dict, Optional
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -646,6 +648,19 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     tmp.write(decoded)
     tmp.close()
 
+    # Extract class and style information from selected ideal images (if enabled)
+    context_info = ""
+    if config.ENHANCEMENT_USE_CONTEXT:
+        class_style_info = extract_class_and_style_info(selected_image_ids)
+        classes = class_style_info['classes']
+        styles = class_style_info['styles']
+        
+        # Build context information for the LLM
+        if classes:
+            context_info += f"The user has selected ideal images from these classes: {', '.join(classes)}. "
+        if styles:
+            context_info += f"The selected images represent these artistic styles: {', '.join(styles)}. "
+    
     # Prepare LLM for prompt enhancement using Mistral-7B-Instruct
     N = config.ENHANCEMENT_CANDIDATE_PROMPTS  # Number of candidate prompts to generate
     original_prompt = search_data['text_prompt']
@@ -653,6 +668,9 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
     DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     torch_dtype = torch.float16 if DEVICE == 'cuda' else torch.float32
     print(f"Loading enhancement model {MODEL_NAME} on {DEVICE}...")  # Debug log
+    print(f"Context enhancement enabled: {config.ENHANCEMENT_USE_CONTEXT}")  # Debug log
+    if config.ENHANCEMENT_USE_CONTEXT:
+        print(f"Context info: {context_info}")  # Debug log
     os.environ['HF_TOKEN'] = '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'
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForCausalLM.from_pretrained(
@@ -660,16 +678,33 @@ def enhance_prompt(n_clicks, search_data, selected_image_ids, saliency_summary):
         torch_dtype=torch_dtype,
         device_map='auto'
     )
-    instruction = f"""
+    
+    # Enhanced instruction with class and style context
+    base_instruction = f"""
     You are an assistant helping improve short prompts for image retrieval. 
     Given a query like: "{original_prompt}", generate one short, reworded version 
     that retains the original meaning but adds slight variety or detail. 
     Do NOT describe scenes or characters. Just rephrase the original style-focused prompt.
-
-    Original prompt: "{original_prompt}"
-
-    Return only one short enhanced prompt enclosed inside <ANSWER> </ANSWER> tags.
     """
+    
+    if context_info:
+        instruction = f"""
+        {base_instruction}
+        
+        Additional context: {context_info}Use this information to make the enhanced prompt more relevant to these classes and styles while maintaining the original intent. Do not specifically mention any of the classes in the enhanced prompt.
+
+        Original prompt: "{original_prompt}"
+
+        Return only one short enhanced prompt enclosed inside <ANSWER> </ANSWER> tags.
+        """
+    else:
+        instruction = f"""
+        {base_instruction}
+
+        Original prompt: "{original_prompt}"
+
+        Return only one short enhanced prompt enclosed inside <ANSWER> </ANSWER> tags.
+        """
 
     formatted_prompt = f"<s>[INST] {instruction.strip()} [/INST]"
     inputs = tokenizer(formatted_prompt, return_tensors='pt').to(DEVICE)
@@ -1998,3 +2033,56 @@ def clear_prompt_selection_on_deselect(selected_idx, enhanced_data, current_clas
         new_classnames.append(" ".join(class_parts))
     
     return new_classnames
+
+def extract_class_and_style_info(selected_image_ids: List[str]) -> Dict[str, List[str]]:
+    """
+    Extract class and style information from selected image IDs.
+    
+    Args:
+        selected_image_ids: List of image IDs in string format
+        
+    Returns:
+        Dictionary with 'classes' and 'styles' lists
+    """
+    df = Dataset.get()
+    classes = []
+    styles = []
+    
+    for image_id in selected_image_ids:
+        try:
+            # Convert to integer if it's a string representation of an integer
+            if isinstance(image_id, str) and image_id.isdigit():
+                image_id = int(image_id)
+            
+            # Get the image information from the dataset
+            if image_id in df.index:
+                row = df.loc[image_id]
+                
+                # Extract class name
+                class_name = row['class_name']
+                classes.append(class_name)
+                
+                # Extract style from filename (format: style_number.jpg)
+                image_path = row['image_path']
+                filename = os.path.basename(image_path)
+                # Remove file extension and extract style (first part before underscore)
+                base_name = os.path.splitext(filename)[0]
+                if '_' in base_name:
+                    style = base_name.split('_')[0]
+                    styles.append(style)
+                else:
+                    # If no underscore, use the whole base name as style
+                    styles.append(base_name)
+                    
+        except Exception as e:
+            print(f"Warning: Could not extract info for image ID {image_id}: {e}")
+            continue
+    
+    # Remove duplicates while preserving order
+    unique_classes = list(dict.fromkeys(classes))
+    unique_styles = list(dict.fromkeys(styles))
+    
+    return {
+        'classes': unique_classes,
+        'styles': unique_styles
+    }
