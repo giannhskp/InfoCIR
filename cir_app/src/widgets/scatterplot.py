@@ -245,7 +245,204 @@ def _update_legend_for_selected_class(scatterplot, class_highlighted: bool, colo
             ).to_plotly_json()
         )
 
-def add_images_to_scatterplot(scatterplot_fig):
+# ---------------------------------------------------------------------------
+# Zoom-responsive marker sizing functionality
+# ---------------------------------------------------------------------------
+
+def calculate_zoom_factor(layout, initial_range=None):
+    """
+    Calculate zoom factor based on current axis ranges.
+    
+    Args:
+        layout: Plotly figure layout
+        initial_range: Dictionary with initial ranges {'x': [min, max], 'y': [min, max]}
+                      If None, will calculate from actual data
+    
+    Returns:
+        float: Zoom factor (1.0 = no zoom, >1.0 = zoomed in, <1.0 = zoomed out)
+    """
+    try:
+        # Get current ranges
+        current_x_range = layout.get('xaxis', {}).get('range', None)
+        current_y_range = layout.get('yaxis', {}).get('range', None)
+        
+        if not current_x_range or not current_y_range:
+            return 1.0
+            
+        # If no initial range provided, calculate from actual data
+        if initial_range is None:
+            try:
+                from src.Dataset import Dataset
+                df = Dataset.get()
+                
+                # Determine which projection we're using from axis labels
+                x_title = layout.get('xaxis', {}).get('title', {})
+                if isinstance(x_title, dict):
+                    x_title = x_title.get('text', '')
+                
+                if 'umap' in str(x_title).lower():
+                    x_col, y_col = 'umap_x', 'umap_y'
+                elif 'tsne' in str(x_title).lower():
+                    x_col, y_col = 'tsne_x', 'tsne_y'
+                else:
+                    # Default fallback ranges
+                    initial_range = {'x': [-50, 50], 'y': [-50, 50]}
+                    
+                if initial_range is None:
+                    # Calculate actual data ranges with some padding
+                    x_min, x_max = df[x_col].min(), df[x_col].max()
+                    y_min, y_max = df[y_col].min(), df[y_col].max()
+                    
+                    # Add 5% padding
+                    x_padding = (x_max - x_min) * 0.05
+                    y_padding = (y_max - y_min) * 0.05
+                    
+                    initial_range = {
+                        'x': [x_min - x_padding, x_max + x_padding],
+                        'y': [y_min - y_padding, y_max + y_padding]
+                    }
+                    
+            except Exception as e:
+                print(f"Error getting data ranges: {e}")
+                # Fallback to reasonable defaults
+                initial_range = {'x': [-50, 50], 'y': [-50, 50]}
+        
+        # Calculate zoom factor based on range reduction
+        current_x_span = abs(current_x_range[1] - current_x_range[0])
+        current_y_span = abs(current_y_range[1] - current_y_range[0])
+        
+        initial_x_span = abs(initial_range['x'][1] - initial_range['x'][0])
+        initial_y_span = abs(initial_range['y'][1] - initial_range['y'][0])
+        
+        # Use the minimum zoom factor from either axis
+        x_zoom = initial_x_span / current_x_span if current_x_span > 0 else 1.0
+        y_zoom = initial_y_span / current_y_span if current_y_span > 0 else 1.0
+        
+        zoom_factor = min(x_zoom, y_zoom)
+        
+        # Clamp zoom factor to reasonable bounds
+        zoom_factor = max(0.1, min(zoom_factor, 20.0))
+        
+        return zoom_factor
+        
+    except Exception as e:
+        print(f"Error calculating zoom factor: {e}")
+        return 1.0
+
+def calculate_marker_size(base_size, zoom_factor, size_type='main'):
+    """
+    Calculate responsive marker size based on zoom level.
+    
+    Args:
+        base_size: Original marker size
+        zoom_factor: Zoom factor from calculate_zoom_factor
+        size_type: Type of marker ('main', 'legend', 'cir_trace')
+    
+    Returns:
+        float: Adjusted marker size
+    """
+    try:
+        # Different scaling strategies for different marker types
+        if size_type == 'main':
+            # Main data points: more aggressive scaling
+            # Scale factor: sqrt to make growth less aggressive at high zoom
+            scale_factor = max(1.0, min(zoom_factor ** 0.5, 5.0))
+            new_size = base_size * scale_factor
+        elif size_type == 'cir_trace':
+            # CIR traces (Top-K, Top-1, Query, etc.): moderate scaling
+            scale_factor = max(1.0, min(zoom_factor ** 0.3, 3.0))
+            new_size = base_size * scale_factor
+        elif size_type == 'legend':
+            # Legend traces: minimal scaling to keep legend readable
+            scale_factor = max(1.0, min(zoom_factor ** 0.2, 2.0))
+            new_size = base_size * scale_factor
+        else:
+            # Default: moderate scaling
+            scale_factor = max(1.0, min(zoom_factor ** 0.4, 4.0))
+            new_size = base_size * scale_factor
+        
+        # Ensure minimum size
+        new_size = max(new_size, 1.0)
+        
+        return new_size
+        
+    except Exception as e:
+        print(f"Error calculating marker size: {e}")
+        return base_size
+
+def apply_zoom_responsive_sizing(scatterplot_fig, zoom_factor):
+    """
+    Apply zoom-responsive sizing to all traces in the scatterplot.
+    
+    Args:
+        scatterplot_fig: Plotly figure JSON
+        zoom_factor: Zoom factor from calculate_zoom_factor
+    
+    Returns:
+        Modified figure with updated marker sizes
+    """
+    try:
+        if not scatterplot_fig or 'data' not in scatterplot_fig:
+            return scatterplot_fig
+            
+        # Base sizes for different trace types
+        base_sizes = {
+            'main': 2,          # Main data trace
+            'legend': 7,        # Legend traces
+            'top_k': 7,         # Top-K CIR results
+            'top_1': 9,         # Top-1 CIR result
+            'query': 12,        # Query marker
+            'final_query': 10,  # Final query marker
+        }
+        
+        for i, trace in enumerate(scatterplot_fig['data']):
+            trace_name = trace.get('name', '')
+            
+            # Determine trace type and base size
+            if i == 0:
+                # Main data trace (always first)
+                size_type = 'main'
+                base_size = base_sizes['main']
+            elif trace_name == 'Top-K':
+                size_type = 'cir_trace'
+                base_size = base_sizes['top_k']
+            elif trace_name == 'Top-1':
+                size_type = 'cir_trace'
+                base_size = base_sizes['top_1']
+            elif trace_name == 'Query':
+                size_type = 'cir_trace'
+                base_size = base_sizes['query']
+            elif trace_name == 'Final Query':
+                size_type = 'cir_trace'
+                base_size = base_sizes['final_query']
+            elif trace_name in ['image embedding', 'selected class', 'Selected Image']:
+                size_type = 'legend'
+                base_size = base_sizes['legend']
+            else:
+                # Default handling for other traces
+                size_type = 'legend'
+                current_size = trace.get('marker', {}).get('size', base_sizes['legend'])
+                base_size = current_size
+            
+            # Calculate new size
+            new_size = calculate_marker_size(base_size, zoom_factor, size_type)
+            
+            # Update marker size
+            if 'marker' not in trace:
+                trace['marker'] = {}
+            trace['marker']['size'] = new_size
+            
+        return scatterplot_fig
+        
+    except Exception as e:
+        print(f"Error applying zoom responsive sizing: {e}")
+        return scatterplot_fig
+
+# ---------------------------------------------------------------------------
+# Existing functions continue below
+# ---------------------------------------------------------------------------
+
+def add_images_to_scatterplot(scatterplot_fig, zoom_factor=None):
     """Add images to scatterplot when zoomed in"""
     scatterplot_fig['layout']['images'] = []
     scatterplot_data = scatterplot_fig['data'][0]
@@ -264,6 +461,21 @@ def add_images_to_scatterplot(scatterplot_fig):
             return scatterplot_fig
 
     if images_in_zoom:
+        # Calculate zoom-responsive image size
+        if zoom_factor is None:
+            zoom_factor = calculate_zoom_factor(scatterplot_fig['layout'])
+        
+        # Base image size (increased from 0.05 to 0.12 for larger thumbnails)
+        base_image_size = 0.3
+        
+        # Scale image size based on zoom - use moderate scaling to prevent images from becoming too large
+        # Use square root scaling to make growth less aggressive
+        image_scale_factor = max(0.5, min(zoom_factor ** 0.4, 3.0))
+        responsive_image_size = base_image_size * image_scale_factor
+        
+        # Ensure minimum and maximum bounds for image size
+        responsive_image_size = max(0.08, min(responsive_image_size, 0.75))
+        
         for x, y, image_id in images_in_zoom:
             image_path = Dataset.get().loc[image_id]['image_path']
             scatterplot_fig['layout']['images'].append(dict(
@@ -272,8 +484,8 @@ def add_images_to_scatterplot(scatterplot_fig):
                 source=Image.open(image_path),
                 xref="x",
                 yref="y",
-                sizex=.05,
-                sizey=.05,
+                sizex=responsive_image_size,
+                sizey=responsive_image_size,
                 xanchor="center",
                 yanchor="middle",
             ))
