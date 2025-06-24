@@ -1,10 +1,10 @@
 # CIR App - Compose Image Retrieval Application
 
-This is a Dash-based web application for exploring image datasets through interactive visualizations. The app uses CLIP embeddings to create 2D projections (UMAP/t-SNE) of images and provides various widgets to explore class distributions.
+This is a Dash-based web application for exploring image datasets through interactive visualizations. The app uses CLIP embeddings to create 2D UMAP projections of images and provides various widgets to explore class distributions.
 
 ## Features
 
-- **Interactive Scatterplot**: Visualize CLIP embeddings in 2D using UMAP or t-SNE projections
+- **Interactive Scatterplot**: Visualize CLIP embeddings in 2D using UMAP projections
 - **Image Gallery**: Browse sample images from selected data points
 - **Wordcloud**: View class distribution as a wordcloud
 - **Histogram**: Analyze class frequency distributions
@@ -73,7 +73,7 @@ Edit `src/config.py` to modify:
 ## Usage
 
 1. The app will automatically process the dataset on first run (this may take a while for CLIP embeddings)
-2. Use the radio buttons to switch between UMAP and t-SNE projections
+2. The app uses UMAP projection for visualization
 3. Select areas on the scatterplot to explore subsets of data
 4. Click on wordcloud terms, histogram bars, or gallery images to highlight classes
 5. Use the "Deselect everything" button to clear selections

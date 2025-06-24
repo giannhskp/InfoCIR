@@ -2,7 +2,6 @@ from dash import Dash, html, dcc
 from src import config
 from src.Dataset import Dataset
 from src.widgets import (
-    projection_radio_buttons, 
     gallery, 
     scatterplot, 
     wordcloud, 
@@ -13,7 +12,6 @@ import dash_bootstrap_components as dbc
 
 # Import callbacks
 import src.callbacks.scatterplot
-import src.callbacks.projection_radio_buttons
 import src.callbacks.wordcloud
 import src.callbacks.histogram
 import src.callbacks.gallery
@@ -34,8 +32,7 @@ def run_ui():
     
     # Create widgets
     help_popup_widget = help_popup.create_help_popup()
-    projection_radio_buttons_widget = projection_radio_buttons.create_projection_radio_buttons()
-    scatterplot_widget = scatterplot.create_scatterplot(config.DEFAULT_PROJECTION)
+    scatterplot_widget = scatterplot.create_scatterplot('UMAP')
     wordcloud_widget = wordcloud.create_wordcloud()
     gallery_widget = gallery.create_gallery()
     histogram_widget = histogram.create_histogram()
@@ -178,10 +175,7 @@ def run_ui():
             dbc.Input(id='cir-text-prompt', placeholder="prompt", type="text", size='sm', className="mb-2", style={'fontSize':'0.7rem'}),
 
             html.Label("Top-N Results:", className="form-label fw-bold small"),
-            dbc.Select(id='cir-top-n', options=[{"label": f"{n} images", "value": n} for n in (5,10,20)], value=10, size='sm', className="mb-2"),
-
-            html.Label("Model:", className="form-label fw-bold small"),
-            dbc.Select(id='custom-dropdown', options=[{"label": "SEARLE", "value": "SEARLE"}, {"label": "freedom", "value": "freedom"}], value="SEARLE", size='sm', className="mb-3"),
+            dbc.Select(id='cir-top-n', options=[{"label": f"{n} images", "value": n} for n in (5,10,20)], value=10, size='sm', className="mb-3"),
 
             dbc.Button("Start", id='cir-search-button', color="primary", size='sm', className="w-100 mb-2", disabled=True, style={'fontSize':'0.7rem'}),
             html.Div(id='cir-search-status', className="small status-indicator mb-2"),
@@ -266,9 +260,7 @@ def run_ui():
     app.layout = html.Div(
         dbc.Container([
             help_popup_widget,
-            html.Div(id='model-change-flag', style={'display': 'none'}),
             dbc.Stack([
-                projection_radio_buttons_widget,
                 html.Div([
                     # Hidden placeholder for legacy callbacks – kept for ID consistency
                     html.A(

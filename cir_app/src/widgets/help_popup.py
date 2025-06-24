@@ -6,7 +6,7 @@ def create_help_popup():
     return dbc.Modal(
         [
             dbc.ModalHeader(dbc.ModalTitle("How to use")),
-            dbc.ModalBody('With this tool you can explore your dataset through a 2D UMAP or t-SNE projection of the CLIP embeddings of the images.'),
+            dbc.ModalBody('With this tool you can explore your dataset through a 2D UMAP projection of the CLIP embeddings of the images.'),
             dbc.ModalBody('Use the scatterplot to select instances of images. '
                           'Click on the scatterplot icons above the scatterplot to select mode of use. '
                           'Double click on scatterplot selections while using the select tool to deselect.'),

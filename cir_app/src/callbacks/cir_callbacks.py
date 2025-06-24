@@ -90,13 +90,13 @@ def update_search_button_state(text_prompt, upload_contents):
     [State('cir-upload-image', 'contents'),
      State('cir-text-prompt', 'value'),
      State('cir-top-n', 'value'),
-     State('custom-dropdown', 'value'),
      State('cir-toggle-state', 'data')],
     prevent_initial_call=True
 )
-def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_model, current_toggle_state):
+def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, current_toggle_state):
     """Perform CIR search using the SEARLE ComposedImageRetrievalSystem"""
     top_n = int(top_n)
+    selected_model = "SEARLE"  # Hardcoded model selection
     if not upload_contents or not text_prompt:
         from src.widgets import histogram
         empty = html.Div("No results yet. Upload an image and enter a text prompt to start retrieval.", className="text-muted text-center p-4")
@@ -424,8 +424,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, selected_m
             'umap_y_query': umap_y_query,
             'umap_x_final_query': umap_x_final_query,
             'umap_y_final_query': umap_y_final_query,
-            'tsne_x_query': None,
-            'tsne_y_query': None,
+
             'text_prompt': text_prompt,
             'top_n': top_n,
             'upload_contents': upload_contents,
@@ -1509,7 +1508,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     xq = search_data.get('umap_x_query'); yq = search_data.get('umap_y_query')
     xfq = yfq = None
     if axis_title != 'umap_x':
-        xq = search_data.get('tsne_x_query'); yq = search_data.get('tsne_y_query')
+        xq, yq = None, None
     # Handle original revert
     if selected_idx == -1:
         topk_ids = search_data.get('topk_ids', [])
@@ -1554,35 +1553,7 @@ def update_widgets_for_enhanced_prompt(selected_idx, enhanced_data, search_data,
     hist = histogram.draw_histogram(cir_df)
     return gal, wc, hist, None, []
 
-@callback(
-    Output('model-change-flag', 'children'),
-    Output('cir-results', 'children', allow_duplicate=True),
-    Output('cir-toggle-button', 'children', allow_duplicate=True),
-    Output('cir-toggle-button', 'color', allow_duplicate=True),
-    Output('cir-toggle-button', 'style', allow_duplicate=True),
-    Output('cir-toggle-button', 'disabled', allow_duplicate=True),
-    Output('cir-toggle-state', 'data', allow_duplicate=True),
-    Output('viz-mode', 'data', allow_duplicate=True),
-    Output('cir-selected-image-ids', 'data', allow_duplicate=True),
-    Output('viz-selected-ids', 'data', allow_duplicate=True),
-    Output('cir-run-button', 'style', allow_duplicate=True),
-    Input('custom-dropdown', 'value'),
-    prevent_initial_call=True
-)
-def clear_results_on_model_change(_):
-    return (
-        "changed",
-        html.Div("Model changed. Please run a new search.", className="text-muted text-center p-4"),
-        'Visualize CIR results',
-        'success',
-        no_update,
-        True,   # keep disabled as there are no results
-        False,  # Reset viz-mode toggle state
-        False,  # Reset viz-mode to OFF
-        [],     # Clear cir-selected-image-ids
-        [],     # Clear viz-selected-ids
-        {'display': 'none'},  # cir-run-button style – hidden
-    )
+
 
 # -----------------------------------------------------------------------------
 # Helper – Re-use card–building logic for Query Results so it can be invoked by
