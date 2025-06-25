@@ -61,50 +61,50 @@ def unified_scatterplot_controller(
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     trigger_value = ctx.triggered[0]['value']
     
-    print(f"Scatterplot controller triggered by: {trigger_id} (value: {trigger_value})")
+    # print(f"Scatterplot controller triggered by: {trigger_id} (value: {trigger_value})")
     
     # DEBUG: Log current figure state
     if scatterplot_fig and 'data' in scatterplot_fig:
         trace_names = [trace.get('name', 'unnamed') for trace in scatterplot_fig['data']]
-        print(f"DEBUG: Input figure has {len(scatterplot_fig['data'])} traces: {trace_names}")
+        # print(f"DEBUG: Input figure has {len(scatterplot_fig['data'])} traces: {trace_names}")
         
         # Check for selections in input figure
         layout_selections = scatterplot_fig.get('layout', {}).get('selections', [])
         main_trace_selectedpoints = None
         if scatterplot_fig['data']:
             main_trace_selectedpoints = scatterplot_fig['data'][0].get('selectedpoints', [])
-        print(f"DEBUG: Input layout.selections: {len(layout_selections) if layout_selections else 0} rectangles")
-        print(f"DEBUG: Input main trace selectedpoints: {len(main_trace_selectedpoints) if main_trace_selectedpoints else 0} points")
+        # print(f"DEBUG: Input layout.selections: {len(layout_selections) if layout_selections else 0} rectangles")
+        # print(f"DEBUG: Input main trace selectedpoints: {len(main_trace_selectedpoints) if main_trace_selectedpoints else 0} points")
         
         # Check dragmode
         dragmode = scatterplot_fig.get('layout', {}).get('dragmode', 'unknown')
-        print(f"DEBUG: Input dragmode: {dragmode}")
+        # print(f"DEBUG: Input dragmode: {dragmode}")
         
         # Check revision counters
         sel_rev = scatterplot_fig.get('layout', {}).get('selectionrevision', 'none')
         ui_rev = scatterplot_fig.get('layout', {}).get('uirevision', 'none')
-        print(f"DEBUG: Input selectionrevision: {sel_rev}, uirevision: {ui_rev}")
-    else:
-        print("DEBUG: Input figure is None or has no data")
+        # print(f"DEBUG: Input selectionrevision: {sel_rev}, uirevision: {ui_rev}")
+    # else:
+        # print("DEBUG: Input figure is None or has no data")
     
     # DEBUG: Log other relevant states
-    print(f"DEBUG: cir_toggle_state: {cir_toggle_state}")
-    print(f"DEBUG: search_data is None: {search_data is None}")
-    print(f"DEBUG: selectedData: {selectedData}")
-    print(f"DEBUG: relayoutData: {relayoutData}")
+    # print(f"DEBUG: cir_toggle_state: {cir_toggle_state}")
+    # print(f"DEBUG: search_data is None: {search_data is None}")
+    # print(f"DEBUG: selectedData: {selectedData}")
+    # print(f"DEBUG: relayoutData: {relayoutData}")
 
     # -------------------------------------------------------------------------
     # 1. DESELECT BUTTON - Clear selections but preserve CIR traces if active
     # -------------------------------------------------------------------------
     if trigger_id == 'deselect-button':
-        print("Handling deselect button")
-        print(f"DEBUG: DESELECT - deselect_clicks value: {deselect_clicks}")
+        # print("Handling deselect button")
+        # print(f"DEBUG: DESELECT - deselect_clicks value: {deselect_clicks}")
         
         import copy
         new_fig = copy.deepcopy(scatterplot_fig)
         
-        print(f"DEBUG: DESELECT - Before clearing, layout.selections: {len(new_fig.get('layout', {}).get('selections', []))}")
-        print(f"DEBUG: DESELECT - Before clearing, main trace selectedpoints: {len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])}")
+        # print(f"DEBUG: DESELECT - Before clearing, layout.selections: {len(new_fig.get('layout', {}).get('selections', []))}")
+        # print(f"DEBUG: DESELECT - Before clearing, main trace selectedpoints: {len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])}")
         
         # Clear selections and overlays
         new_fig['layout']['selections'] = []  # CHANGED: Use empty list instead of None
@@ -116,32 +116,32 @@ def unified_scatterplot_controller(
             trace for trace in new_fig['data']
             if trace.get('name') not in ['Selected Images', 'Selected Image']
         ]
-        print(f"DEBUG: DESELECT - Removed selection traces: {old_trace_count} -> {len(new_fig['data'])}")
+        # print(f"DEBUG: DESELECT - Removed selection traces: {old_trace_count} -> {len(new_fig['data'])}")
         
         # Clear selectedpoints from main trace
         if new_fig['data'] and 'selectedpoints' in new_fig['data'][0]:
             old_selectedpoints = len(new_fig['data'][0]['selectedpoints'])
             new_fig['data'][0]['selectedpoints'] = []
-            print(f"DEBUG: DESELECT - Cleared selectedpoints: {old_selectedpoints} -> 0")
-        else:
-            print("DEBUG: DESELECT - No selectedpoints to clear")
+            # print(f"DEBUG: DESELECT - Cleared selectedpoints: {old_selectedpoints} -> 0")
+        # else:
+            # print("DEBUG: DESELECT - No selectedpoints to clear")
             
         # Always reset main trace colors to clear any class highlighting
         from src.widgets.scatterplot import _set_marker_colors
         _set_marker_colors(new_fig['data'][0], config.SCATTERPLOT_COLOR)
-        print("DEBUG: DESELECT - Reset main trace colors")
+        # print("DEBUG: DESELECT - Reset main trace colors")
         
         # Clear class highlighting legend - remove selected class trace only, don't add legend
         old_trace_count = len(new_fig['data'])
         new_fig['data'] = [trace for trace in new_fig['data'] if trace.get('name') != 'selected class']
-        print(f"DEBUG: DESELECT - Removed selected class traces: {old_trace_count} -> {len(new_fig['data'])}")
+        # print(f"DEBUG: DESELECT - Removed selected class traces: {old_trace_count} -> {len(new_fig['data'])}")
         
         # Ensure we have exactly one "image embedding" legend trace
         # Only count traces that actually appear in legend (not the main data trace)
         legend_traces = [trace for i, trace in enumerate(new_fig['data']) 
                         if i > 0 and trace.get('name') == 'image embedding']
         has_legend = len(legend_traces) > 0
-        print(f"DEBUG: DESELECT - Legend traces found: {len(legend_traces)}, has_legend: {has_legend}")
+        # print(f"DEBUG: DESELECT - Legend traces found: {len(legend_traces)}, has_legend: {has_legend}")
         
         if not has_legend:
             # Add legend trace if missing
@@ -150,16 +150,16 @@ def unified_scatterplot_controller(
                 marker=dict(size=7, color="blue", symbol='circle')
             )
             new_fig['data'].append(legend_trace.to_plotly_json())
-            print("DEBUG: DESELECT - Added missing legend trace")
+            # print("DEBUG: DESELECT - Added missing legend trace")
         
         # END PATCH
         
         # FORCE CLEAR: Toggle dragmode momentarily
         prev_dragmode = new_fig['layout'].get('dragmode', 'select')
-        print(f"DEBUG: DESELECT - Previous dragmode: {prev_dragmode}")
+        # print(f"DEBUG: DESELECT - Previous dragmode: {prev_dragmode}")
         if prev_dragmode in ('select', 'lasso'):
             new_fig['layout']['dragmode'] = 'zoom'
-            print("DEBUG: DESELECT - Changed dragmode to zoom")
+            # print("DEBUG: DESELECT - Changed dragmode to zoom")
         
         # NEW PATCH: bump selectionrevision so Plotly definitely discards the selection overlay
         sel_rev = new_fig['layout'].get('selectionrevision', 0)
@@ -172,8 +172,8 @@ def unified_scatterplot_controller(
         # FORCE FULL REDRAW: bump uirevision as well so Plotly redraws completely
         new_fig['layout']['uirevision'] = sel_rev + 1  # use same counter
         
-        print(f"DEBUG: DESELECT - Set selectionrevision: {sel_rev} -> {sel_rev + 1}")
-        print(f"DEBUG: DESELECT - Set uirevision: {sel_rev + 1}")
+        # print(f"DEBUG: DESELECT - Set selectionrevision: {sel_rev} -> {sel_rev + 1}")
+        # print(f"DEBUG: DESELECT - Set uirevision: {sel_rev + 1}")
         
         # Final debug check
         final_trace_names = [trace.get('name', 'unnamed') for trace in new_fig['data']]
@@ -181,10 +181,10 @@ def unified_scatterplot_controller(
         final_selectedpoints = len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])
         final_dragmode = new_fig['layout'].get('dragmode', 'unknown')
         
-        print(f"DEBUG: DESELECT - Final figure: {len(new_fig['data'])} traces: {final_trace_names}")
-        print(f"DEBUG: DESELECT - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
-        print(f"DEBUG: DESELECT - Final dragmode: {final_dragmode}")
-        print("DEBUG: DESELECT - Returning modified figure")
+        # print(f"DEBUG: DESELECT - Final figure: {len(new_fig['data'])} traces: {final_trace_names}")
+        # print(f"DEBUG: DESELECT - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
+        # print(f"DEBUG: DESELECT - Final dragmode: {final_dragmode}")
+        # print("DEBUG: DESELECT - Returning modified figure")
 
         return new_fig
     
@@ -192,19 +192,19 @@ def unified_scatterplot_controller(
     # 2. CIR TOGGLE STATE CHANGE - Add/remove result traces
     # -------------------------------------------------------------------------
     elif trigger_id == 'cir-toggle-state':
-        print(f"Handling CIR toggle: {cir_toggle_state}")
-        print(f"DEBUG: CIR-TOGGLE - search_data is None: {search_data is None}")
-        if search_data:
-            print(f"DEBUG: CIR-TOGGLE - search_data keys: {list(search_data.keys())}")
+        # print(f"Handling CIR toggle: {cir_toggle_state}")
+        # print(f"DEBUG: CIR-TOGGLE - search_data is None: {search_data is None}")
+        # if search_data:
+            # print(f"DEBUG: CIR-TOGGLE - search_data keys: {list(search_data.keys())}")
         
         import copy
         new_fig = copy.deepcopy(scatterplot_fig)
         
-        print(f"DEBUG: CIR-TOGGLE - Input figure selections: {len(new_fig.get('layout', {}).get('selections', []))}")
-        print(f"DEBUG: CIR-TOGGLE - Input figure selectedpoints: {len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])}")
+        # print(f"DEBUG: CIR-TOGGLE - Input figure selections: {len(new_fig.get('layout', {}).get('selections', []))}")
+        # print(f"DEBUG: CIR-TOGGLE - Input figure selectedpoints: {len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])}")
         
         if not cir_toggle_state:
-            print("DEBUG: CIR-TOGGLE - Hiding CIR results")
+            # print("DEBUG: CIR-TOGGLE - Hiding CIR results")
             # Hide CIR results - remove all CIR traces but preserve main data and legend traces
             new_fig['layout']['images'] = []
             from src.widgets.scatterplot import _set_marker_colors
@@ -222,8 +222,8 @@ def unified_scatterplot_controller(
                     # Only count legend traces, not the main data trace (index 0)
                     if trace_name == 'image embedding' and i > 0:
                         has_legend = True
-                else:
-                    print(f"DEBUG: CIR-TOGGLE - Removing CIR trace: {trace_name}")
+                # else:
+                    # print(f"DEBUG: CIR-TOGGLE - Removing CIR trace: {trace_name}")
             
             # Ensure we have exactly one legend trace
             if not has_legend:
@@ -232,7 +232,7 @@ def unified_scatterplot_controller(
                     marker=dict(size=7, color="blue", symbol='circle')
                 )
                 preserved_traces.append(legend_trace.to_plotly_json())
-                print("DEBUG: CIR-TOGGLE - Added missing legend trace")
+                # print("DEBUG: CIR-TOGGLE - Added missing legend trace")
             
             new_fig['data'] = preserved_traces
             # BEGIN PATCH: ensure any active box/lasso selections are fully cleared when hiding CIR traces
@@ -245,18 +245,18 @@ def unified_scatterplot_controller(
             if new_fig['data'] and 'selectedpoints' in new_fig['data'][0]:
                 new_fig['data'][0]['selectedpoints'] = []
             # END PATCH
-            print(f"DEBUG: CIR-TOGGLE - Cleared selections: {selections_before} -> 0")
-            print(f"DEBUG: CIR-TOGGLE - Cleared selectedpoints: {selectedpoints_before} -> 0")
-            print(f"DEBUG: CIR-TOGGLE - After hiding CIR, preserved {len(new_fig['data'])} traces (was {old_trace_count})")
+            # print(f"DEBUG: CIR-TOGGLE - Cleared selections: {selections_before} -> 0")
+            # print(f"DEBUG: CIR-TOGGLE - Cleared selectedpoints: {selectedpoints_before} -> 0")
+            # print(f"DEBUG: CIR-TOGGLE - After hiding CIR, preserved {len(new_fig['data'])} traces (was {old_trace_count})")
             
         elif search_data:
-            print("DEBUG: CIR-TOGGLE - Showing CIR results")
+            # print("DEBUG: CIR-TOGGLE - Showing CIR results")
             # Show CIR results - add result traces
             df = Dataset.get()
             topk_ids = search_data.get('topk_ids', [])
             top1_id = search_data.get('top1_id', None)
             
-            print(f"DEBUG: CIR-TOGGLE - Adding CIR traces for {len(topk_ids)} results")
+            # print(f"DEBUG: CIR-TOGGLE - Adding CIR traces for {len(topk_ids)} results")
             
             # Clear existing CIR traces first
             old_trace_count = len(new_fig['data'])
@@ -265,7 +265,7 @@ def unified_scatterplot_controller(
                 if trace.get('name') not in ['Top-K', 'Top-1', 'Query', 'Final Query']
             ]
             new_fig['layout']['images'] = []
-            print(f"DEBUG: CIR-TOGGLE - Cleared existing CIR traces: {old_trace_count} -> {len(new_fig['data'])}")
+            # print(f"DEBUG: CIR-TOGGLE - Cleared existing CIR traces: {old_trace_count} -> {len(new_fig['data'])}")
             
             # Get coordinates from main trace
             main_trace = new_fig['data'][0]
@@ -303,7 +303,7 @@ def unified_scatterplot_controller(
                     visible=True
                 )
                 new_fig['data'].append(trace_k.to_plotly_json())
-                print(f"DEBUG: CIR-TOGGLE - Added Top-K trace with {len(xk)} points, color={config.TOP_K_COLOR}")
+                # print(f"DEBUG: CIR-TOGGLE - Added Top-K trace with {len(xk)} points, color={config.TOP_K_COLOR}")
                 
             if x1:
                 trace_1 = go.Scatter(
@@ -314,7 +314,7 @@ def unified_scatterplot_controller(
                     visible=True
                 )
                 new_fig['data'].append(trace_1.to_plotly_json())
-                print(f"DEBUG: CIR-TOGGLE - Added Top-1 trace with {len(x1)} points, color={config.TOP_1_COLOR}")
+                #   print(f"DEBUG: CIR-TOGGLE - Added Top-1 trace with {len(x1)} points, color={config.TOP_1_COLOR}")
                 
             # Query trace (only for UMAP)
             if xq is not None and axis_title == 'umap_x':
@@ -326,7 +326,7 @@ def unified_scatterplot_controller(
                     visible=True
                 )
                 new_fig['data'].append(trace_q.to_plotly_json())
-                print(f"DEBUG: CIR-TOGGLE - Added Query trace at ({xq}, {yq}), color={config.QUERY_COLOR}")
+                # print(f"DEBUG: CIR-TOGGLE - Added Query trace at ({xq}, {yq}), color={config.QUERY_COLOR}")
                 
             # Final Query trace (only for UMAP)
             if xfq is not None and axis_title == 'umap_x':
@@ -338,13 +338,13 @@ def unified_scatterplot_controller(
                     visible=True
                 )
                 new_fig['data'].append(trace_fq.to_plotly_json())
-                print(f"DEBUG: CIR-TOGGLE - Added Final Query trace at ({xfq}, {yfq}), color={config.FINAL_QUERY_COLOR}")
+                # print(f"DEBUG: CIR-TOGGLE - Added Final Query trace at ({xfq}, {yfq}), color={config.FINAL_QUERY_COLOR}")
             
-            print(f"DEBUG: CIR-TOGGLE - Final figure has {len(new_fig['data'])} traces total")
+            # print(f"DEBUG: CIR-TOGGLE - Final figure has {len(new_fig['data'])} traces total")
             
             # Debug: Print trace names to verify they're there
             trace_names = [trace.get('name', 'unnamed') for trace in new_fig['data']]
-            print(f"DEBUG: CIR-TOGGLE - Trace names: {trace_names}")
+            # print(f"DEBUG: CIR-TOGGLE - Trace names: {trace_names}")
         
         # Ensure we have exactly one "image embedding" legend trace when CIR is active
         # Only count legend traces, not the main data trace (index 0)
@@ -358,21 +358,21 @@ def unified_scatterplot_controller(
                 marker=dict(size=7, color="blue", symbol='circle')
             )
             new_fig['data'].append(legend_trace.to_plotly_json())
-            print(f"DEBUG: CIR-TOGGLE - Added missing 'image embedding' legend trace")
+            # print(f"DEBUG: CIR-TOGGLE - Added missing 'image embedding' legend trace")
         
         # Apply zoom-responsive sizing to all traces including newly added CIR traces
         if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
             zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
-            print(f"DEBUG: CIR-TOGGLE - Applying zoom factor {zoom_factor} to CIR traces")
+            # print(f"DEBUG: CIR-TOGGLE - Applying zoom factor {zoom_factor} to CIR traces")
             new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
         
         # Final debug check to ensure CIR traces are properly added
         final_trace_names = [trace.get('name', 'unnamed') for trace in new_fig['data']]
         final_selections = len(new_fig.get('layout', {}).get('selections', []))
         final_selectedpoints = len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])
-        print(f"DEBUG: CIR-TOGGLE - Final trace count: {len(new_fig['data'])}, names: {final_trace_names}")
-        print(f"DEBUG: CIR-TOGGLE - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
-        print("DEBUG: CIR-TOGGLE - Returning modified figure")
+        # print(f"DEBUG: CIR-TOGGLE - Final trace count: {len(new_fig['data'])}, names: {final_trace_names}")
+        # print(f"DEBUG: CIR-TOGGLE - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
+        # print("DEBUG: CIR-TOGGLE - Returning modified figure")
         
         return new_fig
     
@@ -381,7 +381,7 @@ def unified_scatterplot_controller(
     # -------------------------------------------------------------------------
     elif trigger_id == 'scatterplot' and relayoutData:
         print("Handling scatterplot zoom/relayout")
-        print(f"DEBUG: RELAYOUT - relayoutData = {relayoutData}")
+        # print(f"DEBUG: RELAYOUT - relayoutData = {relayoutData}")
         
         # BEGIN PATCH: guard against stale selection rectangles fired AFTER we pressed Deselect.
         # If the relayout event only carries a 'selections' payload but the main trace currently
@@ -389,23 +389,23 @@ def unified_scatterplot_controller(
         if 'selections' in relayoutData:
             main_trace = scatterplot_fig['data'][0] if scatterplot_fig and scatterplot_fig.get('data') else None
             has_active_pts = bool(main_trace and main_trace.get('selectedpoints'))
-            print(f"DEBUG: RELAYOUT - Found selections in relayoutData, has_active_pts: {has_active_pts}")
-            print(f"DEBUG: RELAYOUT - Main trace selectedpoints: {len(main_trace.get('selectedpoints', []) if main_trace else [])}")
+            # print(f"DEBUG: RELAYOUT - Found selections in relayoutData, has_active_pts: {has_active_pts}")
+            # print(f"DEBUG: RELAYOUT - Main trace selectedpoints: {len(main_trace.get('selectedpoints', []) if main_trace else [])}")
             if not has_active_pts:
-                print("DEBUG: RELAYOUT - Discarding stale selection rectangle from relayoutData (no selected points)")
+                # print("DEBUG: RELAYOUT - Discarding stale selection rectangle from relayoutData (no selected points)")
                 # Remove selections from relayoutData and ensure they don't get re-applied
                 original_relayout = relayoutData.copy()
                 relayoutData = {k: v for k, v in relayoutData.items() if k != 'selections'}
-                print(f"DEBUG: RELAYOUT - Modified relayoutData: {original_relayout} -> {relayoutData}")
+                # print(f"DEBUG: RELAYOUT - Modified relayoutData: {original_relayout} -> {relayoutData}")
                 # Also strip any lingering selections in the figure we clone below
                 if 'layout' in scatterplot_fig and 'selections' in scatterplot_fig['layout']:
                     scatterplot_fig['layout'].pop('selections', None)
-                    print("DEBUG: RELAYOUT - Removed lingering selections from input figure")
+                    # print("DEBUG: RELAYOUT - Removed lingering selections from input figure")
         # END PATCH
         
         # Skip dragmode changes
         if len(relayoutData) == 1 and 'dragmode' in relayoutData:
-            print("DEBUG: RELAYOUT - Skipping dragmode-only change")
+            # print("DEBUG: RELAYOUT - Skipping dragmode-only change")
             return dash.no_update
         
         import copy
@@ -415,10 +415,10 @@ def unified_scatterplot_controller(
         is_axis_reset = ('xaxis.autorange' in relayoutData or 'yaxis.autorange' in relayoutData)
         has_explicit_range = ('xaxis.range[0]' in relayoutData or 'yaxis.range[0]' in relayoutData)
         
-        print(f"DEBUG: RELAYOUT - is_axis_reset: {is_axis_reset}, has_explicit_range: {has_explicit_range}")
+        # print(f"DEBUG: RELAYOUT - is_axis_reset: {is_axis_reset}, has_explicit_range: {has_explicit_range}")
         
         if is_axis_reset:
-            print('DEBUG: RELAYOUT - Handling axis reset - restoring original marker sizes')
+            # print('DEBUG: RELAYOUT - Handling axis reset - restoring original marker sizes')
             # Axis reset: apply zoom factor of 1.0 (original sizes)
             zoom_factor = 1.0
             new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
@@ -426,28 +426,28 @@ def unified_scatterplot_controller(
             new_fig['layout']['images'] = []
             
         elif has_explicit_range:
-            print('DEBUG: RELAYOUT - Adding thumbnail overlays and applying zoom-responsive sizing')
+            # print('DEBUG: RELAYOUT - Adding thumbnail overlays and applying zoom-responsive sizing')
             # Apply zoom-responsive marker sizing
             zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
-            print(f"DEBUG: RELAYOUT - Calculated zoom factor: {zoom_factor}")
+            # print(f"DEBUG: RELAYOUT - Calculated zoom factor: {zoom_factor}")
             new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
             
             # Add thumbnail images with zoom-responsive sizing
             new_fig = scatterplot.add_images_to_scatterplot(new_fig, zoom_factor)
         else:
             # Other relayout changes - apply zoom-responsive sizing if we have ranges
-            print(f"DEBUG: RELAYOUT - Other relayout change: {relayoutData}")
+            # print(f"DEBUG: RELAYOUT - Other relayout change: {relayoutData}")
             # Don't block the update, but apply zoom-responsive sizing if possible
             if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
                 zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
-                print(f"DEBUG: RELAYOUT - Applying zoom factor {zoom_factor} to other relayout change")
+                # print(f"DEBUG: RELAYOUT - Applying zoom factor {zoom_factor} to other relayout change")
                 new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
         
         # Final debug check
         final_selections = len(new_fig.get('layout', {}).get('selections', []))
         final_selectedpoints = len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])
-        print(f"DEBUG: RELAYOUT - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
-        print("DEBUG: RELAYOUT - Returning modified figure")
+        # print(f"DEBUG: RELAYOUT - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
+        # print("DEBUG: RELAYOUT - Returning modified figure")
         
         return new_fig
     
@@ -598,7 +598,7 @@ def unified_scatterplot_controller(
         
         # When CIR is active, be careful not to interfere with CIR traces
         if cir_toggle_state:
-            print("DEBUG: Class selection while CIR is active - preserving CIR traces")
+            # print("DEBUG: Class selection while CIR is active - preserving CIR traces")
             # Only update main trace colors, preserve all CIR traces
             if selected_scatterplot_class is None:
                 # Deselect - clear class highlighting but preserve CIR traces
@@ -658,34 +658,34 @@ def unified_scatterplot_controller(
     # -------------------------------------------------------------------------
     elif trigger_id == 'prompt-selection':
         print(f"Handling prompt selection: {prompt_selection}")
-        print(f"DEBUG: PROMPT-SELECTION - prompt_selection value: {prompt_selection}")
+        # print(f"DEBUG: PROMPT-SELECTION - prompt_selection value: {prompt_selection}")
         
         import copy
         new_fig = copy.deepcopy(scatterplot_fig)
         
-        print(f"DEBUG: PROMPT-SELECTION - Input figure selections: {len(new_fig.get('layout', {}).get('selections', []))}")
-        print(f"DEBUG: PROMPT-SELECTION - Input figure selectedpoints: {len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])}")
+        # print(f"DEBUG: PROMPT-SELECTION - Input figure selections: {len(new_fig.get('layout', {}).get('selections', []))}")
+        # print(f"DEBUG: PROMPT-SELECTION - Input figure selectedpoints: {len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])}")
         
         if prompt_selection == -1:
             # Prompt deselected - clear any selections that might be lingering
-            print("DEBUG: PROMPT-SELECTION - Prompt deselected, clearing selections")
+            # print("DEBUG: PROMPT-SELECTION - Prompt deselected, clearing selections")
             
             # Clear selections and overlays
             selections_before = len(new_fig.get('layout', {}).get('selections', []))
             new_fig['layout']['selections'] = []
             new_fig['layout']['images'] = []
-            print(f"DEBUG: PROMPT-SELECTION - Cleared layout selections: {selections_before} -> 0")
+            # print(f"DEBUG: PROMPT-SELECTION - Cleared layout selections: {selections_before} -> 0")
             
             # Clear selectedpoints from main trace
             selectedpoints_before = len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])
             if new_fig['data'] and 'selectedpoints' in new_fig['data'][0]:
                 new_fig['data'][0]['selectedpoints'] = []
-            print(f"DEBUG: PROMPT-SELECTION - Cleared selectedpoints: {selectedpoints_before} -> 0")
+            # print(f"DEBUG: PROMPT-SELECTION - Cleared selectedpoints: {selectedpoints_before} -> 0")
             
             # Reset main trace colors to clear any class highlighting
             from src.widgets.scatterplot import _set_marker_colors
             _set_marker_colors(new_fig['data'][0], config.SCATTERPLOT_COLOR)
-            print("DEBUG: PROMPT-SELECTION - Reset main trace colors")
+            # print("DEBUG: PROMPT-SELECTION - Reset main trace colors")
             
             # Remove selection traces
             old_trace_count = len(new_fig['data'])
@@ -693,7 +693,7 @@ def unified_scatterplot_controller(
                 trace for trace in new_fig['data']
                 if trace.get('name') not in ['Selected Images', 'Selected Image', 'selected class']
             ]
-            print(f"DEBUG: PROMPT-SELECTION - Removed selection traces: {old_trace_count} -> {len(new_fig['data'])}")
+            # print(f"DEBUG: PROMPT-SELECTION - Removed selection traces: {old_trace_count} -> {len(new_fig['data'])}")
             
             # Ensure we have exactly one "image embedding" legend trace
             legend_traces = [trace for i, trace in enumerate(new_fig['data']) 
@@ -705,7 +705,7 @@ def unified_scatterplot_controller(
                     marker=dict(size=7, color="blue", symbol='circle')
                 )
                 new_fig['data'].append(legend_trace.to_plotly_json())
-                print("DEBUG: PROMPT-SELECTION - Added missing legend trace")
+                # print("DEBUG: PROMPT-SELECTION - Added missing legend trace")
             
             # Force clear with revision bump
             sel_rev = new_fig['layout'].get('selectionrevision', 0)
@@ -715,14 +715,14 @@ def unified_scatterplot_controller(
                 sel_rev = 0
             new_fig['layout']['selectionrevision'] = sel_rev + 1
             new_fig['layout']['uirevision'] = sel_rev + 1
-            print(f"DEBUG: PROMPT-SELECTION - Bumped revisions to: {sel_rev + 1}")
+            # print(f"DEBUG: PROMPT-SELECTION - Bumped revisions to: {sel_rev + 1}")
             
         else:
             # Enhanced prompt functionality - show specific prompt results
-            print(f"DEBUG: PROMPT-SELECTION - Specific prompt selected: {prompt_selection}")
+            # print(f"DEBUG: PROMPT-SELECTION - Specific prompt selected: {prompt_selection}")
             
             if not cir_toggle_state or not enhanced_prompts_data:
-                print("DEBUG: PROMPT-SELECTION - CIR not active or no enhanced prompts data")
+                # print("DEBUG: PROMPT-SELECTION -
                 return dash.no_update
             
             # Clear existing CIR traces
@@ -748,12 +748,12 @@ def unified_scatterplot_controller(
                             if img_name in df.index:
                                 topk_ids.append(img_name)
                     top1_id = topk_ids[0] if topk_ids else None
-                    print(f"DEBUG: PROMPT-SELECTION - Using enhanced prompt {prompt_selection} with {len(topk_ids)} results")
+                    # print(f"DEBUG: PROMPT-SELECTION - Using enhanced prompt {prompt_selection} with {len(topk_ids)} results")
                 else:
-                    print("DEBUG: PROMPT-SELECTION - Invalid prompt selection index")
+                    # print("DEBUG: PROMPT-SELECTION - Invalid prompt selection index")
                     return dash.no_update
             else:
-                print("DEBUG: PROMPT-SELECTION - Invalid prompt selection value")
+                # print("DEBUG: PROMPT-SELECTION - Invalid prompt selection value")
                 return dash.no_update
             
             # Add the appropriate result traces (similar to CIR toggle logic)
@@ -819,11 +819,11 @@ def unified_scatterplot_controller(
                         xfq, yfq = coord_data.get('x'), coord_data.get('y')
                     else:
                         xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
-                        print(f"DEBUG: prompt-selection falling back to original coords: x={xfq}, y={yfq}")
+                        # print(f"DEBUG: prompt-selection falling back to original coords: x={xfq}, y={yfq}")
                 else:
                     # Use original Final Query coordinates
                     xfq, yfq = search_data.get('umap_x_final_query'), search_data.get('umap_y_final_query')
-                    print(f"DEBUG: prompt-selection using original coords: x={xfq}, y={yfq}")
+                    # print(f"DEBUG: prompt-selection using original coords: x={xfq}, y={yfq}")
                     
                 if xfq is not None and yfq is not None:
                     trace_fq = go.Scatter(
@@ -851,16 +851,16 @@ def unified_scatterplot_controller(
             # Apply zoom-responsive sizing to all traces including enhanced prompt traces
             if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
                 zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
-                print(f"Applying zoom factor {zoom_factor} to enhanced prompt traces")
+                # print(f"Applying zoom factor {zoom_factor} to enhanced prompt traces")
                 new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
         
         # Final debug check
         final_trace_names = [trace.get('name', 'unnamed') for trace in new_fig['data']]
         final_selections = len(new_fig.get('layout', {}).get('selections', []))
         final_selectedpoints = len(new_fig['data'][0].get('selectedpoints', []) if new_fig['data'] else [])
-        print(f"DEBUG: PROMPT-SELECTION - Final trace count: {len(new_fig['data'])}, names: {final_trace_names}")
-        print(f"DEBUG: PROMPT-SELECTION - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
-        print("DEBUG: PROMPT-SELECTION - Returning modified figure")
+        # print(f"DEBUG: PROMPT-SELECTION - Final trace count: {len(new_fig['data'])}, names: {final_trace_names}")
+        # print(f"DEBUG: PROMPT-SELECTION - Final selections: {final_selections}, selectedpoints: {final_selectedpoints}")
+        # print("DEBUG: PROMPT-SELECTION - Returning modified figure")
         
         return new_fig
     
@@ -869,10 +869,10 @@ def unified_scatterplot_controller(
     # -------------------------------------------------------------------------
     elif trigger_id == 'viz-selected-ids':
         print(f"Handling viz selection: {viz_selected_ids}")
-        print(f"DEBUG: viz_mode = {viz_mode}")
-        print(f"DEBUG: cir_toggle_state = {cir_toggle_state}")
-        print(f"DEBUG: search_data is None = {search_data is None}")
-        print(f"DEBUG: prompt_selection = {prompt_selection}")
+        # print(f"DEBUG: viz_mode = {viz_mode}")
+        # print(f"DEBUG: cir_toggle_state = {cir_toggle_state}")
+        # print(f"DEBUG: search_data is None = {search_data is None}")
+        # print(f"DEBUG: prompt_selection = {prompt_selection}")
         
         import copy
         new_fig = copy.deepcopy(scatterplot_fig)
@@ -882,7 +882,7 @@ def unified_scatterplot_controller(
         # are both triggered simultaneously by the CIR search callback
         # This must happen BEFORE the viz_mode check to handle the race condition
         if cir_toggle_state and search_data:
-            print("DEBUG: viz-selected-ids detected CIR is active, preserving/adding CIR traces")
+            # print("DEBUG: viz-selected-ids detected CIR is active, preserving/adding CIR traces")
             
             # Remove all non-main traces first
             new_fig['data'] = [new_fig['data'][0]]  # Keep only main data trace
@@ -906,17 +906,17 @@ def unified_scatterplot_controller(
                             if img_name in df.index:
                                 topk_ids.append(img_name)
                     top1_id = topk_ids[0] if topk_ids else None
-                    print(f"DEBUG: viz-selected-ids using enhanced prompt {prompt_selection} with {len(topk_ids)} results")
+                    # print(f"DEBUG: viz-selected-ids using enhanced prompt {prompt_selection} with {len(topk_ids)} results")
                 else:
                     # Fallback to original search data
                     topk_ids = search_data.get('topk_ids', [])
                     top1_id = search_data.get('top1_id', None)
-                    print(f"DEBUG: viz-selected-ids falling back to original search data")
+                    # print(f"DEBUG: viz-selected-ids falling back to original search data")
             else:
                 # Use original search data
                 topk_ids = search_data.get('topk_ids', [])
                 top1_id = search_data.get('top1_id', None)
-                print(f"DEBUG: viz-selected-ids using original search data")
+                # print(f"DEBUG: viz-selected-ids using original search data")
             
             # Get coordinates from main trace
             main_trace = new_fig['data'][0]
@@ -999,7 +999,7 @@ def unified_scatterplot_controller(
                 )
                 new_fig['data'].append(trace_fq.to_plotly_json())
             
-            print(f"DEBUG: viz-selected-ids re-added CIR traces, now have {len(new_fig['data'])} traces")
+            # print(f"DEBUG: viz-selected-ids re-added CIR traces, now have {len(new_fig['data'])} traces")
             
             # Ensure we have exactly one "image embedding" legend trace when CIR is active
             # Only count legend traces, not the main data trace (index 0)
@@ -1013,12 +1013,12 @@ def unified_scatterplot_controller(
                     marker=dict(size=7, color="blue", symbol='circle')
                 )
                 new_fig['data'].append(legend_trace.to_plotly_json())
-                print(f"DEBUG: viz-selected-ids added missing 'image embedding' legend trace")
+                # print(f"DEBUG: viz-selected-ids added missing 'image embedding' legend trace")
         else:
             # Remove existing Selected Images trace but preserve other traces
             new_fig['data'] = [tr for tr in new_fig['data'] if tr.get('name') != 'Selected Images']
         
-        print(f"DEBUG: viz-selected-ids preserving {len(new_fig['data'])} traces")
+        # print(f"DEBUG: viz-selected-ids preserving {len(new_fig['data'])} traces")
         
         # If visualization mode is OFF and we don't have CIR traces to preserve, return no update
         if not viz_mode and not (cir_toggle_state and search_data):
@@ -1042,15 +1042,15 @@ def unified_scatterplot_controller(
                     name='Selected Images'
                 )
                 new_fig['data'].append(sel_trace.to_plotly_json())
-                print(f"DEBUG: Added Selected Images trace with {len(sel_x)} points")
+                # print(f"DEBUG: Added Selected Images trace with {len(sel_x)} points")
         
         # Apply zoom-responsive sizing to all traces including visualization mode traces
         if 'layout' in new_fig and new_fig['layout'].get('xaxis', {}).get('range'):
             zoom_factor = scatterplot.calculate_zoom_factor(new_fig['layout'])
-            print(f"Applying zoom factor {zoom_factor} to visualization mode traces")
+            # print(f"Applying zoom factor {zoom_factor} to visualization mode traces")
             new_fig = scatterplot.apply_zoom_responsive_sizing(new_fig, zoom_factor)
-        
-        print(f"DEBUG: viz-selected-ids returning figure with {len(new_fig['data'])} traces")
+         
+        # print(f"DEBUG: viz-selected-ids returning figure with {len(new_fig['data'])} traces")
         return new_fig
     
     # Default: no update
