@@ -664,6 +664,7 @@ html, body {
 
 #left-tabs .tab:hover {
     background: var(--bg-tertiary);
+    color: var(--text-primary);
     transform: translateY(-2px);
 }
 
