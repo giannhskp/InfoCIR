@@ -62,7 +62,7 @@
 ### 1. Clone the Repository
 ```bash
 git clone <repository-url>
-cd multimedia-analutics
+cd multimedia-analytics
 ```
 
 ### 2. Environment Setup
