@@ -1,8 +1,12 @@
 SEIZE/
-data/
+data/*
+cir_app/data/*
+!cir_app/data/class_names.csv
 fashioniq_databases/
 dbs/
 mma2025/
+SEARLE_original/
+
 
 # Python
 __pycache__/
