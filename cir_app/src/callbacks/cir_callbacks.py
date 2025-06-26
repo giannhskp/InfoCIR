@@ -27,6 +27,8 @@ import math
 import numpy as np
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
+import traceback
+from src.widgets import histogram as histogram_widget
 
 @callback(
     [Output('cir-upload-status', 'children'),
@@ -120,7 +122,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, current_to
             [],                    # viz-selected-ids
             None,                  # saliency-data
             [],                    # wordcloud
-            histogram.draw_histogram(None)  # histogram figure
+            histogram_widget.draw_histogram(None)  # histogram figure
         )
     try:
         print(f"Starting CIR search with model: {selected_model}, prompt: '{text_prompt}', top_n: {top_n}")
@@ -255,8 +257,12 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, current_to
 
         header = html.Div([
             html.H5("Retrieved Images", className="mb-0", style={"display": "inline-block"}),
-            dbc.Button(id="visualize-toggle-button", size="sm", color="secondary", class_name="ms-2", n_clicks=0,
-                       children="Visualize OFF")
+            dbc.Switch(
+                id="visualize-toggle-switch",
+                value=viz_mode,
+                label=f"Visualize {'ON' if viz_mode else 'OFF'}",
+                class_name="ms-2",
+            ),
         ], className="d-flex align-items-center mb-3")
 
         results_div = html.Div([header] + rows)
@@ -477,7 +483,6 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, current_to
         )
     except Exception as e:
         print(f"CIR search error: {e}")
-        import traceback
         traceback.print_exc()
         err = html.Div([html.I(className="fas fa-exclamation-triangle text-danger me-2"), f"Retrieval error: {e}"], className="text-danger small")
         # On error, keep Visualize button disabled and Run-CIR hidden
@@ -498,7 +503,7 @@ def perform_cir_search(n_clicks, upload_contents, text_prompt, top_n, current_to
             [],                          # viz-selected-ids
             None,                        # saliency-data
             [],                          # wordcloud
-            histogram.draw_histogram(None)  # histogram figure
+            histogram_widget.draw_histogram(None)  # histogram figure
         )
 
 # Button toggle callback for CIR visualization
@@ -1646,14 +1651,15 @@ def _build_query_results_layout(result_tuples, *, clickable: bool = True, viz_mo
         cols = [dbc.Col(c, width=3, className="mb-3 px-2") for c in chunk]
         rows.append(dbc.Row(cols, className="g-2"))
 
-    # Visualize toggle reflects current viz_mode
-    btn_children = "Visualize ON" if viz_mode else "Visualize OFF"
-    btn_color = "success" if viz_mode else "secondary"
-
+    # Visualize switch reflects current viz_mode
     header = html.Div([
         html.H5("Retrieved Images", className="mb-0", style={"display": "inline-block"}),
-        dbc.Button(id="visualize-toggle-button", size="sm", color=btn_color, class_name="ms-2", n_clicks=0,
-                   children=btn_children)
+        dbc.Switch(
+            id="visualize-toggle-switch",
+            value=viz_mode,
+            label=f"Visualize {'ON' if viz_mode else 'OFF'}",
+            class_name="ms-2",
+        ),
     ], className="d-flex align-items-center mb-3")
 
     return html.Div([header] + rows)
@@ -1718,13 +1724,11 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
 
 @callback(
     [Output('viz-mode', 'data'),
-     Output('visualize-toggle-button', 'children'),
-     Output('visualize-toggle-button', 'color'),
+     Output('visualize-toggle-switch', 'label'),
      Output('cir-results', 'children', allow_duplicate=True),
      Output('cir-selected-image-ids', 'data', allow_duplicate=True),
-     Output('viz-selected-ids', 'data', allow_duplicate=True),
-],
-    Input('visualize-toggle-button', 'n_clicks'),
+     Output('viz-selected-ids', 'data', allow_duplicate=True)],
+    Input('visualize-toggle-switch', 'value'),
     [State('viz-mode', 'data'),
      State('prompt-selection', 'value'),
      State('cir-enhanced-prompts-data', 'data'),
@@ -1732,37 +1736,31 @@ def update_query_results_for_prompt_selection(selected_idx, enhanced_data, searc
      State('scatterplot', 'figure')],
     prevent_initial_call=True
 )
-def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, search_data, scatterplot_fig):
-    """Toggle visualization mode ON/OFF and clear all selections when switching modes."""
-    # Only toggle if we actually have a click (n_clicks > 0)
-    if n_clicks is None or n_clicks == 0:
-        # Initial state - keep current mode and set appropriate label
-        label = 'Visualize ON' if current_mode else 'Visualize OFF'
-        color = 'success' if current_mode else 'secondary'
-        from dash import no_update
-        return current_mode, label, color, no_update, no_update, no_update
-    
-    # Toggle the mode
-    new_mode = not current_mode
-    label = 'Visualize ON' if new_mode else 'Visualize OFF'
-    color = 'success' if new_mode else 'secondary'
+def toggle_visualize_mode(switch_value, current_mode, selected_idx, enhanced_data, search_data, scatterplot_fig):
+    """Handle visualization mode switch (ON/OFF) via the toggle switch."""
+    from dash import no_update
 
-    # Clear all selections when switching modes
+    # If the value hasn't changed, do nothing
+    if switch_value == current_mode:
+        label = f"Visualize {'ON' if current_mode else 'OFF'}"
+        return current_mode, label, no_update, no_update, no_update
+
+    new_mode = bool(switch_value)
+    label = f"Visualize {'ON' if new_mode else 'OFF'}"
+
+    # Clear selections when switching modes
     cleared_cir_selected = []
     cleared_viz_selected = []
 
-    # Scatterplot updates now handled by unified controller
-
     # Rebuild Query Results layout with new viz_mode state
     if search_data is None:
-        return new_mode, label, color, no_update, cleared_cir_selected, cleared_viz_selected
+        return new_mode, label, no_update, cleared_cir_selected, cleared_viz_selected
 
     # Determine which results to show (baseline or selected enhanced prompt)
     if selected_idx is not None and selected_idx >= 0 and enhanced_data is not None:
         rs_lists = enhanced_data.get('all_results', [])
         if selected_idx < len(rs_lists):
             res = rs_lists[selected_idx]
-            # Enable clicking of non-TOP-1 cards only when visualization mode is ON
             layout = _build_query_results_layout(res, clickable=new_mode, viz_mode=new_mode)
         else:
             layout = no_update
@@ -1773,7 +1771,7 @@ def toggle_visualize_mode(n_clicks, current_mode, selected_idx, enhanced_data, s
         else:
             layout = no_update
 
-    return new_mode, label, color, layout, cleared_cir_selected, cleared_viz_selected
+    return new_mode, label, layout, cleared_cir_selected, cleared_viz_selected
 
 # -----------------------------------------------------------------------------
 # React to viz-mode changes – clear selections when turning OFF

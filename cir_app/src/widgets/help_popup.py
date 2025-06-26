@@ -164,12 +164,5 @@ def create_help_popup():
                     html.Li("Use fullscreen modes for detailed analysis of visualizations")
                 ], className="mb-0 mt-2")
             ], color="light", className="border-start border-warning border-4")
-        ]),
-        
-        dbc.ModalFooter([
-            dbc.Button([
-                html.I(className="fas fa-rocket me-2"),
-                "Start Exploring!"
-            ], id="close-help", color="primary", className="shadow-sm")
         ])
     ], id="help-popup", size="lg", scrollable=True) 

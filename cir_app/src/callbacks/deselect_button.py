@@ -32,12 +32,10 @@ def deselect_button_is_pressed(scatterplot_fig, cir_toggle_state, _):
         # Visualisation was ON – keep it ON
         cir_button_text = 'Hide CIR results'
         cir_button_color = 'warning'
-        new_cir_toggle_state = True
     else:
         # Visualisation was OFF – keep it OFF (unchanged behaviour)
         cir_button_text = 'Visualize CIR results'
         cir_button_color = 'success'
-        new_cir_toggle_state = False
 
     # ------------------------------------------------------------------
     # 2. Build a blank histogram (since everything is deselected).
@@ -45,4 +43,9 @@ def deselect_button_is_pressed(scatterplot_fig, cir_toggle_state, _):
     from src.widgets import histogram as histogram_widget
     histogram_fig = histogram_widget.draw_histogram(None)
 
-    return [], cir_button_text, cir_button_color, new_cir_toggle_state, -1, histogram_fig, None, None 
+    from dash import no_update
+
+    # Do NOT emit a value for cir-toggle-state; keeping it unchanged avoids triggering
+    # the scatterplot controller redundantly, preventing a race condition that could
+    # re-introduce a stale selection rectangle.
+    return [], cir_button_text, cir_button_color, no_update, -1, histogram_fig, None, None 
