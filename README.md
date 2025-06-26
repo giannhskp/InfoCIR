@@ -109,7 +109,7 @@ DATASET_ROOT_PATH = '/your/actual/path/to/dataset'
 ```
 
 - You can download Imagenet-R dataset from [here](https://people.eecs.berkeley.edu/~hendrycks/imagenet-r.tar).
-- The corresponding **class_names.csv** can be found [here](cir_app/data/class_names.csv)
+- The corresponding **class_names.csv** can be found [here](cir_app/data/class_names.csv).
 
 
 ## 🚀 Quick Start
