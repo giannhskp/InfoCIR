@@ -5,22 +5,14 @@
 
 ![InfoCIR Dashboard](https://img.shields.io/badge/InfoCIR-Dashboard-blue?style=for-the-badge&logo=python)
 
+
 <div align="center">
   <img src="media/teaser.png" alt="InfoCIR Dashboard Preview" width="800"/>
   <p><em>
-    The UI consists of six linked panels:  
-    (A) <strong>Query Input</strong> – Upload an image, enter a text prompt, and select the retrieval model.  
-    (B) <strong>Retrieval Results</strong> – View the top-K most similar images returned from the database.  
-    (C) <strong>Overview</strong> – See a word cloud (C1) and histogram (C2) of class labels in the results to gain distribution insights.  
-    (D) <strong>Embedding View</strong> – A 2D UMAP projection of the entire image dataset, highlighting the query image, the top-K results, and any selected class.  
-    (E) <strong>Prompt Refinement</strong> – An LLM-powered panel suggesting improved prompt variants, with metrics indicating their efficacy.  
-    (F) <strong>Explanation Panel</strong> – Visualizations of model attribution, including:  
-    &nbsp;&nbsp;&nbsp;&nbsp;(F1) Saliency maps for image regions;  
-    &nbsp;&nbsp;&nbsp;&nbsp;(F2) A token-level influence bar chart for the prompt words;  
-    &nbsp;&nbsp;&nbsp;&nbsp;(F3) A <strong>Rank-∆</strong> heatmap showing how a chosen “ideal” image’s rank changes under different prompt variants.  
-    <br/>Each component is interactive and coordinated with the others, enabling an iterative query–explanation–refinement workflow.
+    The user interface of our system consists of six main panels. (A) The <strong>Composed Image Retrieval Panel</strong> allows users to input an image and a text prompt and select the number of images k to be retrieved. (B) The <strong>Query Results Panel</strong> displays the top-k images ranked by similarity; any image can be clicked to mark it as an ideal target for prompt refinement. (C) The <strong>Histogram / Wordcloud Panel</strong> includes a word cloud (C<sub>1</sub>) and a class-frequency histogram (C<sub>2</sub>) summarizing labels within the current top-k. (D) The central <strong>Embedding View</strong> shows a 2D UMAP projection of the dataset, highlighting the reference image, the composed query embedding, and the top-k results. (E) The <strong>Prompt Enhancement Panel</strong> proposes alternative prompts conditioned on the selected ideals, using an LLM and retrieval metrics. (F) The <strong>Explanation Panel</strong> visualizes model attribution using a saliency map (F<sub>1</sub>), a token attribution bar chart (F<sub>2</sub>), and a Rank-Δ heatmap (F<sub>3</sub>).
   </em></p>
 </div>
+
 
 
 
