@@ -1,5 +1,17 @@
 # InfoCIR – Interactive Composed Image Retrieval Dashboard
 
+## 📄 Associated Publication
+
+This repository contains the official implementation of the accepted conference paper:
+
+> **InfoCIR: Multimedia Analysis for Composed Image Retrieval**  
+> Paper ID: **7973**  
+> Accepted at **IEEE PacificVis 2026 (Conference Papers Track)**
+
+[![arXiv](https://img.shields.io/badge/arXiv-2602.13402-b31b1b.svg)](https://arxiv.org/abs/2602.13402v1)
+
+This repository hosts the official implementation of the paper.
+
 **InfoCIR** is an open-source web application (built with Plotly Dash) for exploring a *Composed Image Retrieval (CIR)* system through interactive visualizations and explainability tools. It integrates a state-of-the-art CIR model (SEARLE) with a rich dashboard that lets you query by combining an image + text description, visualize the results in an embedding space, analyze class distributions, and refine your text prompts with AI assistance. The goal is to help users understand **why** certain images are retrieved and how slight changes in wording can affect the results, by coupling retrieval with explainability and prompt engineering in one interface.
 
 
