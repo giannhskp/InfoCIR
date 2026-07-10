@@ -2,15 +2,20 @@
 
 ## 📄 Associated Publication
 
-This repository contains the official implementation of the accepted conference paper:
+This repository contains the official implementation of the IEEE PacificVis 2026 paper:
 
 > **InfoCIR: Multimedia Analysis for Composed Image Retrieval**  
-> Paper ID: **7973**  
-> Accepted at **IEEE PacificVis 2026 (Conference Papers Track)**
+> Ioannis Dravilas, Ioannis Kapetangeorgis, Anastasios Latsoudis, Conor McCarthy, Gonçalo Marcelino, Marcel Worring  
+> **2026 IEEE 19th Pacific Visualization Conference (PacificVis)**, Sydney, Australia, April 20–23, 2026.  
+> DOI: **10.1109/PacificVis68791.2026.00041**
 
-[![arXiv](https://img.shields.io/badge/arXiv-2602.13402-b31b1b.svg)](https://arxiv.org/abs/2602.13402v1)
+[![IEEE Xplore](https://img.shields.io/badge/IEEE-Xplore-00629B?style=flat-square&logo=ieee&logoColor=white)](https://ieeexplore.ieee.org/document/11558878)
+[![DOI](https://img.shields.io/badge/DOI-10.1109%2FPacificVis68791.2026.00041-blue.svg)](https://doi.org/10.1109/PacificVis68791.2026.00041)
+[![arXiv](https://img.shields.io/badge/arXiv-2602.13402-b31b1b.svg)](https://arxiv.org/abs/2602.13402)
 
-This repository hosts the official implementation of the paper.
+If you use **InfoCIR** in your research, please cite our paper. The IEEE version is the version of record, while the arXiv preprint remains available for open access.
+
+This repository hosts the official implementation accompanying the publication.
 
 **InfoCIR** is an open-source web application (built with Plotly Dash) for exploring a *Composed Image Retrieval (CIR)* system through interactive visualizations and explainability tools. It integrates a state-of-the-art CIR model (SEARLE) with a rich dashboard that lets you query by combining an image + text description, visualize the results in an embedding space, analyze class distributions, and refine your text prompts with AI assistance. The goal is to help users understand **why** certain images are retrieved and how slight changes in wording can affect the results, by coupling retrieval with explainability and prompt engineering in one interface.
 
